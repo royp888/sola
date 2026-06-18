@@ -5,10 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Telegram 反馈群](https://img.shields.io/badge/Telegram-反馈群-26A5E4?logo=telegram&logoColor=white)](https://t.me/+gbitAgNwtRtlYjZh)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Vue](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-Sola 是一套面向 Telegram 群组运营的开源平台，由 **Bot、Admin API、Web 管理后台、Mini App 和后台 Worker** 五个独立进程组成，适合需要长期运营、持续迭代的 Telegram 群产品，而不是一次性脚本机器人。
+Sola 是一套面向 Telegram 群组运营的开源 Bot，由 **Telegram Bot 和后台 Worker** 组成，适合单人长期运营、持续迭代的 Telegram 群产品，而不是一次性脚本机器人。
 
 ## 功能总览
 
@@ -21,8 +20,6 @@ Sola 是一套面向 Telegram 群组运营的开源平台，由 **Bot、Admin AP
 | **内容运营** | 自动回复、消息模板、邀请链接追踪、等级成长体系、sed 行内文本修正 |
 | **定时发帖** | 一次性/循环任务、富媒体（图文/视频/文件）、Inline Keyboard、自动删除 |
 | **抽奖** | 按钮/口令参与、群内公告、Worker 自动开奖（`poll_answer` 实时接收） |
-| **Web 后台** | 群组管理、用户管理、积分、违规、定时任务、抽奖管理、备份恢复、审计日志、系统设置 |
-| **Mini App** | Telegram WebApp 面板：仪表盘、群设置、快捷发布、抽奖、入群验证（Turnstile） |
 | **工程基础** | Docker Compose、SQL migrations、多租户隔离、Owner 归属校验、细粒度管理员权限 |
 
 ## 架构概览
@@ -30,43 +27,33 @@ Sola 是一套面向 Telegram 群组运营的开源平台，由 **Bot、Admin AP
 ```mermaid
 flowchart TD
     TG["Telegram Users / Groups"] --> BOT["Bot\ncmd/bot"]
-    BOT --> API["Admin API\ncmd/api"]
     BOT --> WORKER["Worker\ncmd/worker"]
-    API --> WEB["Web Admin\nweb/src"]
-    API --> MINI["Mini App\nweb/src/mini"]
-    API --> PG[("PostgreSQL")]
-    API --> REDIS[("Redis")]
+    BOT --> PG[("PostgreSQL")]
+    BOT --> REDIS[("Redis")]
     WORKER --> PG
     WORKER --> REDIS
-    BOT --> PG
-    BOT --> REDIS
 ```
 
 ## 技术栈
 
 | 层次 | 技术 |
 |------|------|
-| 后端 | Go · gotgbot/v2 · Gin · GORM · gocron · JWT |
+| 后端 | Go · gotgbot/v2 · GORM · gocron |
 | 存储 | PostgreSQL · Redis |
-| 前端 | Vue 3 · Vite · Element Plus · ECharts |
-| 部署 | Docker · Docker Compose · Nginx |
+| 部署 | Docker · Docker Compose |
 
 ## 目录结构
 
 ```text
 cmd/
-  api/        管理后台 API 入口
   bot/        Telegram Bot 入口
   worker/     后台任务 Worker 入口
 internal/
-  api/        HTTP handler、中间件、鉴权
   bot/        Telegram handler、命令、交互流程
   config/     配置加载
   model/      GORM 模型
   service/    业务逻辑
   store/      DB / Redis 初始化
-web/          Vue 3 管理后台
-web/src/mini/ Telegram Mini App 前端
 database/
   migrations/ SQL 迁移脚本（按文件名顺序执行）
 ```
@@ -87,15 +74,6 @@ cp .env.example .env
 |------|------|
 | `SOLA_BOT_TOKEN` | Telegram Bot Token（从 @BotFather 获取） |
 | `SOLA_DATABASE_DSN` | PostgreSQL 连接字符串 |
-| `SOLA_JWT_SECRET` | JWT 密钥，使用随机长字符串 |
-| `SOLA_APP_ADMIN_USERNAME` | 后台管理员用户名 |
-| `SOLA_APP_ADMIN_PASSWORD_HASH` | 管理员密码 bcrypt 哈希（生产环境首选） |
-
-生成密码哈希：
-
-```bash
-htpasswd -bnBC 12 "" your-password | tr -d ":\n"
-```
 
 **Cloudflare Turnstile 验证（可选，启用 `turnstile` 验证类型时必填）：**
 
@@ -112,38 +90,15 @@ htpasswd -bnBC 12 "" your-password | tr -d ":\n"
 docker compose up -d --build
 ```
 
-Compose 会按顺序启动：`postgres` → `redis` → `migrate`（执行尚未应用的 `*.up.sql`）→ `api` / `bot` / `worker` → `nginx`。
+Compose 会按顺序启动：`postgres` → `redis` → `migrate`（执行尚未应用的 `*.up.sql`）→ `bot` / `worker`。
 
-API 默认只在容器网络内可访问，`nginx` 对外提供入口。如需本机直连 API 调试：
-
-```bash
-docker compose --profile direct-api up -d api-direct
-```
-
-### 3. 更新前端
-
-修改 `web/` 源码后重新构建并热更新 nginx：
-
-```bash
-cd web && npm run build && npm run build:mini && cd ..
-docker compose up -d --force-recreate nginx
-```
-
-> `build:mini` 构建 Telegram Mini App（入群验证页）并合并到 `dist/` 目录，无需额外挂载。
-
-### 4. 本地开发
+### 3. 本地开发
 
 ```bash
 # 后端（分别在不同终端启动）
-go run ./cmd/api
 go run ./cmd/bot
 go run ./cmd/worker
-
-# 前端
-cd web && npm install && npm run dev
 ```
-
-前端开发服务器默认代理 `/api` 到 `http://127.0.0.1:8080`，无需额外配置。
 
 ## 入群验证
 
@@ -192,11 +147,9 @@ cd web && npm install && npm run dev
 
 ## 安全说明
 
-- 管理员密码支持 bcrypt 哈希校验，登录接口 Redis 限流（每 15 分钟最多 5 次）
-- CORS 白名单，不反射任意 Origin
-- 涉及群资源的后台接口带归属校验（Owner 隔离）
-- 前端会话令牌保存在内存，不写 `localStorage`
-- 群管操作（封禁/禁言/踢出/关键词命中）自动写入 `audit_logs`，可在后台查询
+- 群资源操作会尽量校验 Telegram 管理员身份和 Owner 归属
+- 群管操作（封禁/禁言/踢出/关键词命中）自动写入 `audit_logs`
+- 可选 Redis 用于冷却、缓存和部分限流能力
 
 **正式上线前建议**：配置 TLS 和域名、为 PostgreSQL/Redis 配置持久化、先在测试群验证所有核心链路。
 

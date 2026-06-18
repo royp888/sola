@@ -5,10 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Telegram Feedback Group](https://img.shields.io/badge/Telegram-Feedback%20Group-26A5E4?logo=telegram&logoColor=white)](https://t.me/+gbitAgNwtRtlYjZh)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Vue](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-Sola is an open-source Telegram group operations platform built around five independent processes: **Bot, Admin API, Web Admin Panel, Mini App, and Worker**. It is designed for teams that want to build and run a real Telegram product over the long term, not just deploy a single-purpose script bot.
+Sola is an open-source Telegram group operations bot built around **Telegram Bot and Worker** processes. It is designed for solo operators who want to run and iterate on a real Telegram group product over the long term, not just deploy a single-purpose script bot.
 
 ## Features
 
@@ -21,8 +20,6 @@ Sola is an open-source Telegram group operations platform built around five inde
 | **Content Ops** | Auto-replies, message templates, invite link tracking, level system, sed inline text correction |
 | **Scheduled Posts** | One-time and recurring tasks, rich media (image/video/file), Inline Keyboard, auto-delete |
 | **Lottery** | Button and keyword participation, group announcements, Worker-driven auto-draw |
-| **Web Admin** | Chat management, user management, points, violations, scheduled posts, lotteries, backup/restore, audit logs, system settings |
-| **Mini App** | Telegram WebApp panel: dashboard, chat settings, quick publish, lottery, join verification (Turnstile) |
 | **Engineering** | Docker Compose, SQL migrations, multi-tenant isolation, owner-scoped access, granular admin permissions |
 
 ## Architecture
@@ -30,43 +27,33 @@ Sola is an open-source Telegram group operations platform built around five inde
 ```mermaid
 flowchart TD
     TG["Telegram Users / Groups"] --> BOT["Bot\ncmd/bot"]
-    BOT --> API["Admin API\ncmd/api"]
     BOT --> WORKER["Worker\ncmd/worker"]
-    API --> WEB["Web Admin\nweb/src"]
-    API --> MINI["Mini App\nweb/src/mini"]
-    API --> PG[("PostgreSQL")]
-    API --> REDIS[("Redis")]
+    BOT --> PG[("PostgreSQL")]
+    BOT --> REDIS[("Redis")]
     WORKER --> PG
     WORKER --> REDIS
-    BOT --> PG
-    BOT --> REDIS
 ```
 
 ## Tech Stack
 
 | Layer | Technologies |
 |-------|-------------|
-| Backend | Go · gotgbot/v2 · Gin · GORM · gocron · JWT |
+| Backend | Go · gotgbot/v2 · GORM · gocron |
 | Storage | PostgreSQL · Redis |
-| Frontend | Vue 3 · Vite · Element Plus · ECharts |
-| Deployment | Docker · Docker Compose · Nginx |
+| Deployment | Docker · Docker Compose |
 
 ## Repository Layout
 
 ```text
 cmd/
-  api/        Admin API entry
   bot/        Telegram Bot entry
   worker/     Background Worker entry
 internal/
-  api/        HTTP handlers, middleware, auth
   bot/        Telegram handlers, commands, flows
   config/     Configuration loading
   model/      GORM models
   service/    Business logic
   store/      DB / Redis initialization
-web/          Vue 3 admin panel
-web/src/mini/ Telegram Mini App frontend
 database/
   migrations/ SQL migration files (applied in filename order)
 ```
@@ -87,15 +74,6 @@ cp .env.example .env
 |----------|-------------|
 | `SOLA_BOT_TOKEN` | Telegram Bot Token (from @BotFather) |
 | `SOLA_DATABASE_DSN` | PostgreSQL connection string |
-| `SOLA_JWT_SECRET` | JWT secret — use a long random string |
-| `SOLA_APP_ADMIN_USERNAME` | Web admin username |
-| `SOLA_APP_ADMIN_PASSWORD_HASH` | bcrypt hash of the admin password (preferred over plaintext) |
-
-Generate a password hash:
-
-```bash
-htpasswd -bnBC 12 "" your-password | tr -d ":\n"
-```
 
 **Cloudflare Turnstile (optional — required only when using the `turnstile` verification type):**
 
@@ -112,38 +90,15 @@ htpasswd -bnBC 12 "" your-password | tr -d ":\n"
 docker compose up -d --build
 ```
 
-Compose starts services in order: `postgres` → `redis` → `migrate` (runs pending `*.up.sql` files) → `api` / `bot` / `worker` → `nginx`.
+Compose starts services in order: `postgres` → `redis` → `migrate` (runs pending `*.up.sql` files) → `bot` / `worker`.
 
-The API is only reachable inside the Compose network by default; `nginx` handles external access. To expose the API directly for local debugging:
-
-```bash
-docker compose --profile direct-api up -d api-direct
-```
-
-### 3. Update the frontend
-
-After editing `web/` source files, rebuild and reload nginx:
-
-```bash
-cd web && npm run build && npm run build:mini && cd ..
-docker compose up -d --force-recreate nginx
-```
-
-> `build:mini` builds the Telegram Mini App (join-verification page) and merges it into `dist/` — no extra Docker volume mount needed.
-
-### 4. Local development
+### 3. Local development
 
 ```bash
 # Backend (run each in a separate terminal)
-go run ./cmd/api
 go run ./cmd/bot
 go run ./cmd/worker
-
-# Frontend
-cd web && npm install && npm run dev
 ```
-
-The dev server proxies `/api` to `http://127.0.0.1:8080` automatically.
 
 ## Join Verification
 
@@ -192,11 +147,9 @@ Additional options:
 
 ## Security
 
-- Admin password verified with bcrypt; login endpoint rate-limited via Redis (5 attempts per 15 minutes)
-- CORS allowlist — no arbitrary origin reflection
-- All chat-scoped admin endpoints enforce owner-based access checks
-- Frontend session tokens are stored in memory, not `localStorage`
-- Moderation actions (ban/mute/kick/keyword match) are written to `audit_logs` and queryable from the admin panel
+- Chat-scoped operations validate Telegram administrator status and owner access where possible
+- Moderation actions (ban/mute/kick/keyword match) are written to `audit_logs`
+- Optional Redis powers cooldowns, caches, and selected rate limits
 
 **Before going live**: configure TLS and a domain, enable PostgreSQL/Redis persistence, and validate all core flows in a test group first.
 

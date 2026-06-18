@@ -22,17 +22,17 @@ type Config struct {
 		EnableSwagger     bool     `mapstructure:"enable_swagger"`
 	} `mapstructure:"app"`
 	Bot struct {
-		Token            string   `mapstructure:"token"`
-		Mode             string   `mapstructure:"mode"`
-		DefaultLocale    string   `mapstructure:"default_locale"`
-		MiniAppURL       string   `mapstructure:"mini_app_url"`
+		Token         string `mapstructure:"token"`
+		Mode          string `mapstructure:"mode"`
+		DefaultLocale string `mapstructure:"default_locale"`
+		MiniAppURL    string `mapstructure:"mini_app_url"`
 		// DisabledFeatures lists module names to skip registering.
 		// Valid values: verify, moderation, admin, points, lottery,
 		//               publish, auto_reply, keywords, templates, invites.
 		// Omit to enable everything (the default).
 		DisabledFeatures []string `mapstructure:"disabled_features"`
 	} `mapstructure:"bot"`
-	Database DatabaseConfig `mapstructure:"database"`
+	Database  DatabaseConfig `mapstructure:"database"`
 	AiFilter  AiFilterConfig `mapstructure:"ai_filter"`
 	Turnstile struct {
 		SiteKey      string `mapstructure:"site_key"`
@@ -58,6 +58,7 @@ type DatabaseConfig struct {
 	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 }
+
 // AiFilterConfig holds the AI-based spam/ad filter settings.
 type AiFilterConfig struct {
 	Enabled  bool   `mapstructure:"enabled"`
@@ -66,7 +67,6 @@ type AiFilterConfig struct {
 	Model    string `mapstructure:"model"`
 	Endpoint string `mapstructure:"endpoint"`
 }
-
 
 var activeDatabaseConfig = DatabaseConfig{
 	AutoMigrate:     false,
@@ -153,26 +153,9 @@ func Load(path string) (Config, error) {
 	if cfg.Database.MaxIdleConns == 0 {
 		cfg.Database.MaxIdleConns = 5
 	}
-	if err := validateProductionSecrets(cfg); err != nil {
-		return Config{}, err
-	}
 	activeDatabaseConfig = cfg.Database
 
 	return cfg, nil
-}
-
-func validateProductionSecrets(cfg Config) error {
-	if !isProductionEnv(cfg.App.Env) {
-		return nil
-	}
-	if strings.TrimSpace(cfg.JWT.Secret) == "" || strings.TrimSpace(cfg.JWT.Secret) == "change-this-in-production" {
-		return fmt.Errorf("jwt.secret must be configured to a strong non-default value in production")
-	}
-	password := strings.TrimSpace(cfg.App.AdminPassword)
-	if strings.TrimSpace(cfg.App.AdminPasswordHash) == "" && (password == "" || password == "change-me") {
-		return fmt.Errorf("app.admin_password must not use the default value in production; configure app.admin_password_hash or a strong password")
-	}
-	return nil
 }
 
 func splitAndTrimCSV(raw string) []string {
@@ -185,15 +168,6 @@ func splitAndTrimCSV(raw string) []string {
 		}
 	}
 	return out
-}
-
-func isProductionEnv(env string) bool {
-	switch strings.ToLower(strings.TrimSpace(env)) {
-	case "prod", "production":
-		return true
-	default:
-		return false
-	}
 }
 
 func bindEnv(v *viper.Viper) error {
@@ -219,15 +193,15 @@ func bindEnv(v *viper.Viper) error {
 		"redis.db":                   "SOLA_REDIS_DB",
 		"jwt.secret":                 "SOLA_JWT_SECRET",
 		"jwt.issuer":                 "SOLA_JWT_ISSUER",
-		"ai_filter.enabled":            "SOLA_AI_FILTER_ENABLED",
-		"ai_filter.provider":           "SOLA_AI_FILTER_PROVIDER",
-		"ai_filter.api_key":            "SOLA_AI_FILTER_API_KEY",
-		"ai_filter.model":              "SOLA_AI_FILTER_MODEL",
-		"ai_filter.endpoint":           "SOLA_AI_FILTER_ENDPOINT",
-		"turnstile.site_key":           "SOLA_TURNSTILE_SITE_KEY",
-		"turnstile.secret_key":         "SOLA_TURNSTILE_SECRET_KEY",
-		"turnstile.verify_secret":      "SOLA_TURNSTILE_VERIFY_SECRET",
-		"jwt.access_token_ttl":         "SOLA_JWT_ACCESS_TOKEN_TTL",
+		"ai_filter.enabled":          "SOLA_AI_FILTER_ENABLED",
+		"ai_filter.provider":         "SOLA_AI_FILTER_PROVIDER",
+		"ai_filter.api_key":          "SOLA_AI_FILTER_API_KEY",
+		"ai_filter.model":            "SOLA_AI_FILTER_MODEL",
+		"ai_filter.endpoint":         "SOLA_AI_FILTER_ENDPOINT",
+		"turnstile.site_key":         "SOLA_TURNSTILE_SITE_KEY",
+		"turnstile.secret_key":       "SOLA_TURNSTILE_SECRET_KEY",
+		"turnstile.verify_secret":    "SOLA_TURNSTILE_VERIFY_SECRET",
+		"jwt.access_token_ttl":       "SOLA_JWT_ACCESS_TOKEN_TTL",
 	}
 
 	for key, env := range bindings {
