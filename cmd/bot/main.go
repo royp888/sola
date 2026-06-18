@@ -19,6 +19,8 @@ import (
 	botapp "github.com/dabowin/sola/internal/bot"
 	"github.com/dabowin/sola/internal/config"
 	"github.com/dabowin/sola/internal/service"
+	"github.com/dabowin/sola/internal/worker"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -100,6 +102,15 @@ func run() error {
 
 	if mode := strings.TrimSpace(cfg.Bot.Mode); mode != "" && !strings.EqualFold(mode, "polling") {
 		log.Printf("bot.mode=%q configured; cmd/bot is starting polling", mode)
+	}
+
+	if resources != nil {
+		go func() {
+			runner := worker.New(resources.Config, resources.Store, resources.Logger)
+			if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				resources.Logger.Error("worker exited with error", zap.Error(err))
+			}
+		}()
 	}
 
 	if err := updater.StartPolling(tgBot, &ext.PollingOpts{
