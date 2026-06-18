@@ -29,7 +29,6 @@ type Bundle struct {
 	Levels          *LevelService
 	Moderation      *ModerationService
 	AutoReply       *AutoReplyService
-	Backup          *BackupService
 	MessageTemplate *MessageTemplateService
 	InviteLink      *InviteLinkService
 	AuditLog        *AuditService
@@ -54,7 +53,6 @@ func NewBundleWithBotToken(st *store.Store, redisClient *redis.Client, botToken 
 		Levels:          NewLevelService(st),
 		Moderation:      NewModerationService(st),
 		AutoReply:       NewAutoReplyService(st),
-		Backup:          NewBackupService(st),
 		MessageTemplate: NewMessageTemplateService(st),
 		InviteLink:      NewInviteLinkService(st, botToken),
 		AuditLog:        NewAuditService(st),
