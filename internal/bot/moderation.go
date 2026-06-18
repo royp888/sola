@@ -112,7 +112,7 @@ func (a *App) handleMute(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	until := time.Now().Add(duration).Unix()
 	doMute := func(targetID int64) error {
-		if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: until, UseIndependentChatPermissions: true}); err != nil {
+		if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: until}); err != nil {
 			return err
 		}
 		a.auditModAction(scope.Actor.ID, scope.Chat.ID, "mute", targetID, fmt.Sprintf("duration: %s", duration.Round(time.Second)))
@@ -352,7 +352,7 @@ func (a *App) handleModerationCallback(b *gotgbot.Bot, ctx *ext.Context, payload
 
 func (a *App) restrictFromPanel(b *gotgbot.Bot, ctx *ext.Context, scope RequestScope, targetID int64, duration time.Duration) error {
 	until := time.Now().Add(duration).Unix()
-	if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: until, UseIndependentChatPermissions: true}); err != nil {
+	if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: until}); err != nil {
 		return err
 	}
 	return respondText(b, ctx, fmt.Sprintf("已禁言用户 %d，时长 %s。", targetID, duration.Round(time.Second)), moderationTargetMarkup(targetID, false))
@@ -492,24 +492,30 @@ func parseBatchMuteTargets(ctx *ext.Context) ([]int64, time.Duration, error) {
 	if len(args) == 0 {
 		return nil, 0, fmt.Errorf("missing targets")
 	}
+	// Detect duration suffix in the last arg before parsing IDs.
+	// Supports: "30m", "2h", "1d", or bare number treated as minutes (e.g. "30" → 30m).
+	duration := defaultDuration
+	parseArgs := args
+	if len(args) > 1 {
+		last := args[len(args)-1]
+		if d, err := parseModerationDuration(last); err == nil {
+			duration = d
+			parseArgs = args[:len(args)-1]
+		} else if n, err2 := strconv.Atoi(last); err2 == nil && n > 0 && n < 100_000 {
+			duration = time.Duration(n) * time.Minute
+			parseArgs = args[:len(args)-1]
+		}
+	}
 	var ids []int64
-	i := 0
-	for i < len(args) {
-		id, err := strconv.ParseInt(args[i], 10, 64)
+	for _, arg := range parseArgs {
+		id, err := strconv.ParseInt(arg, 10, 64)
 		if err != nil || id == 0 {
 			break
 		}
 		ids = append(ids, id)
-		i++
 	}
 	if len(ids) == 0 {
 		return nil, 0, fmt.Errorf("no valid user IDs")
-	}
-	duration := defaultDuration
-	if i < len(args) {
-		if d, err := parseModerationDuration(args[i]); err == nil {
-			duration = d
-		}
 	}
 	return ids, duration, nil
 }
