@@ -7,7 +7,7 @@
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-Sola 是一套面向 Telegram 群组运营的开源 Bot，由 **Telegram Bot 和后台 Worker** 组成，适合单人长期运营、持续迭代的 Telegram 群产品，而不是一次性脚本机器人。
+Sola 是一套面向 Telegram 群组运营的开源 Bot，采用 **单 Bot 进程内置后台调度器** 架构，适合单人长期运营、持续迭代的 Telegram 群产品，而不是一次性脚本机器人。
 
 ## 功能总览
 
@@ -19,7 +19,7 @@ Sola 是一套面向 Telegram 群组运营的开源 Bot，由 **Telegram Bot 和
 | **风控审核** | 关键词过滤、链接限制、未验证用户限制、AI 广告二次判定（OpenAI 兼容接口）、违规记录 |
 | **内容运营** | 自动回复、消息模板、邀请链接追踪、等级成长体系、sed 行内文本修正 |
 | **定时发帖** | 一次性/循环任务、富媒体（图文/视频/文件）、Inline Keyboard、自动删除 |
-| **抽奖** | 按钮/口令参与、群内公告、Worker 自动开奖（`poll_answer` 实时接收） |
+| **抽奖** | 按钮/口令参与、群内公告、后台调度器自动开奖（`poll_answer` 实时接收） |
 | **工程基础** | Docker Compose、SQL migrations、多租户隔离、Owner 归属校验、细粒度管理员权限 |
 
 ## 架构概览
@@ -27,11 +27,11 @@ Sola 是一套面向 Telegram 群组运营的开源 Bot，由 **Telegram Bot 和
 ```mermaid
 flowchart TD
     TG["Telegram Users / Groups"] --> BOT["Bot\ncmd/bot"]
-    BOT --> WORKER["Worker\ncmd/worker"]
+    BOT --> SCHED["Scheduler\nin-process"]
     BOT --> PG[("PostgreSQL")]
-    BOT --> REDIS[("Redis")]
-    WORKER --> PG
-    WORKER --> REDIS
+    BOT -. optional .-> REDIS[("Redis")]
+    SCHED --> PG
+    SCHED -. optional .-> REDIS
 ```
 
 ## 技术栈
@@ -39,21 +39,20 @@ flowchart TD
 | 层次 | 技术 |
 |------|------|
 | 后端 | Go · gotgbot/v2 · GORM · gocron |
-| 存储 | PostgreSQL · Redis |
+| 存储 | PostgreSQL · Redis（可选） |
 | 部署 | Docker · Docker Compose |
 
 ## 目录结构
 
 ```text
 cmd/
-  bot/        Telegram Bot 入口
-  worker/     后台任务 Worker 入口
+  bot/        Telegram Bot 入口（内置后台调度器）
 internal/
   bot/        Telegram handler、命令、交互流程
   config/     配置加载
   model/      GORM 模型
   service/    业务逻辑
-  store/      DB / Redis 初始化
+  store/      DB / Redis 初始化（Redis 可选）
 database/
   migrations/ SQL 迁移脚本（按文件名顺序执行）
 ```
@@ -90,14 +89,12 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Compose 会按顺序启动：`postgres` → `redis` → `migrate`（执行尚未应用的 `*.up.sql`）→ `bot` / `worker`。
+Compose 会按顺序启动：`postgres` → `migrate`（执行尚未应用的 `*.up.sql`）→ `bot`。Redis 服务保留为可选能力，需要时配置 `SOLA_REDIS_ADDR` 即可启用。
 
 ### 3. 本地开发
 
 ```bash
-# 后端（分别在不同终端启动）
 go run ./cmd/bot
-go run ./cmd/worker
 ```
 
 ## 入群验证
@@ -149,9 +146,9 @@ go run ./cmd/worker
 
 - 群资源操作会尽量校验 Telegram 管理员身份和 Owner 归属
 - 群管操作（封禁/禁言/踢出/关键词命中）自动写入 `audit_logs`
-- 可选 Redis 用于冷却、缓存和部分限流能力
+- Redis 可选，用于冷却、缓存和部分限流能力；不配置 Redis 时 Bot 仍可启动
 
-**正式上线前建议**：配置 TLS 和域名、为 PostgreSQL/Redis 配置持久化、先在测试群验证所有核心链路。
+**正式上线前建议**：配置 TLS 和域名、为 PostgreSQL 配置持久化；如启用 Redis，也请配置 Redis 持久化；先在测试群验证所有核心链路。
 
 ## 数据库与迁移
 
@@ -161,6 +158,7 @@ go run ./cmd/worker
 
 ## 更新日志
 
+- **2026-06-18** v2.0.0 — 重构为纯 Bot 架构：删除 Web 管理面板，合并 bot+worker 为单进程，Redis 变为可选
 - **2026-06-18** v1.0.4 — 修复10个前端bug（积分配置卡死、Cron步长语法、关键词过滤联动、封禁页空态与加载、抽奖数据竞争、侧边栏记忆等），新增群组解绑、禁言操作、统计自定义日期、Bot全局配置四项功能
 - **2026-06-18** v1.0.3 — 修复关键词过滤未删消息、抽奖创建后无群公告、入群验证按钮无反应、/lottery 命令无响应四个 bug
 - **2026-06-17** v1.0.2 — 修复 Worker 调度死锁（runDueJobs 持锁时调用 increment/resetScheduledPostFailure 导致自锁）；修复用户管理详情抽屉调分后积分不刷新；修复用户管理 chat_id/user_id 类型错误及静默吞错
