@@ -67,32 +67,6 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-    env_file:
-      - ${SOLA_ENV_FILE:-.env}
-    volumes:
-      - ./logs:/app/logs
-    healthcheck:
-      test: ["CMD-SHELL", "test -r /proc/1/exe"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: worker
-    restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     env_file:
       - ${SOLA_ENV_FILE:-.env}
     volumes:
