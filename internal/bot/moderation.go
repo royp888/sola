@@ -120,6 +120,9 @@ func (a *App) handleMute(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	if len(ids) == 1 {
 		if err := doMute(ids[0]); err != nil {
+			if isSuperGroupOnlyError(err) {
+				return sendText(b, ctx, "❌ 禁言失败：禁言功能仅在超级群组中可用。\n请在 Telegram 设置中将此群升级为超级群组后再试。", nil)
+			}
 			return err
 		}
 		return sendText(b, ctx, fmt.Sprintf("已禁言用户 %d，时长 %s。", ids[0], duration.Round(time.Second)), nil)
@@ -127,6 +130,9 @@ func (a *App) handleMute(b *gotgbot.Bot, ctx *ext.Context) error {
 	var successes, failures []string
 	for _, id := range ids {
 		if err := doMute(id); err != nil {
+			if isSuperGroupOnlyError(err) {
+				return sendText(b, ctx, "❌ 禁言失败：禁言功能仅在超级群组中可用。\n请在 Telegram 设置中将此群升级为超级群组后再试。", nil)
+			}
 			failures = append(failures, fmt.Sprintf("%d", id))
 		} else {
 			successes = append(successes, fmt.Sprintf("%d", id))
@@ -144,7 +150,10 @@ func (a *App) handleUnmute(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err != nil {
 		return sendText(b, ctx, "用法：回复目标消息 /unmute，或 /unmute <user_id>。", nil)
 	}
-	if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, fullPermissions(), &gotgbot.RestrictChatMemberOpts{UseIndependentChatPermissions: true}); err != nil {
+	if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, fullPermissions(), nil); err != nil {
+		if isSuperGroupOnlyError(err) {
+			return sendText(b, ctx, "❌ 解除禁言失败：此功能仅在超级群组中可用。", nil)
+		}
 		return err
 	}
 	return sendText(b, ctx, fmt.Sprintf("已解除用户 %d 的禁言。", targetID), nil)
@@ -296,7 +305,10 @@ func (a *App) handleModerationCallback(b *gotgbot.Bot, ctx *ext.Context, payload
 	case "mute2h":
 		return a.restrictFromPanel(b, ctx, scope, targetID, 2*time.Hour)
 	case "unmute":
-		if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, fullPermissions(), &gotgbot.RestrictChatMemberOpts{UseIndependentChatPermissions: true}); err != nil {
+		if _, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, targetID, fullPermissions(), nil); err != nil {
+			if isSuperGroupOnlyError(err) {
+				return respondText(b, ctx, "❌ 解除禁言失败：此功能仅在超级群组中可用。", moderationTargetMarkup(targetID, false))
+			}
 			return err
 		}
 		return respondText(b, ctx, fmt.Sprintf("已解除用户 %d 的禁言。", targetID), moderationTargetMarkup(targetID, false))
@@ -574,6 +586,10 @@ func parseModerationDuration(raw string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid duration")
 	}
 	return duration, nil
+}
+
+func isSuperGroupOnlyError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "supergroup")
 }
 
 func mutePermissions() gotgbot.ChatPermissions {

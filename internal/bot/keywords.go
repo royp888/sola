@@ -292,8 +292,10 @@ func (a *App) applyKeywordFilterAction(b *gotgbot.Bot, ctx *ext.Context, match K
 		return sendText(b, ctx, fmt.Sprintf("用户 %d 触发关键词过滤，已警告 %d/%d。", msg.From.Id, count, limit), nil)
 	case "mute":
 		until := time.Now().Add(keywordMuteDuration).Unix()
-		if _, err := b.RestrictChatMemberWithContext(scope.Context, msg.Chat.Id, msg.From.Id, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: until, UseIndependentChatPermissions: true}); err != nil {
-			return err
+		if _, err := b.RestrictChatMemberWithContext(scope.Context, msg.Chat.Id, msg.From.Id, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: until}); err != nil {
+			if !isSuperGroupOnlyError(err) {
+				return err
+			}
 		}
 		return sendText(b, ctx, fmt.Sprintf("用户 %d 触发关键词过滤，已禁言 %s。", msg.From.Id, keywordMuteDuration.Round(time.Second)), nil)
 	case "ban":
@@ -356,8 +358,10 @@ func (a *App) applySpamScoreAction(b *gotgbot.Bot, ctx *ext.Context, score int, 
 		if duration <= 0 {
 			duration = spamMuteDuration
 		}
-		if _, err := b.RestrictChatMemberWithContext(scope.Context, msg.Chat.Id, msg.From.Id, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: time.Now().Add(duration).Unix(), UseIndependentChatPermissions: true}); err != nil {
-			return err
+		if _, err := b.RestrictChatMemberWithContext(scope.Context, msg.Chat.Id, msg.From.Id, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UntilDate: time.Now().Add(duration).Unix()}); err != nil {
+			if !isSuperGroupOnlyError(err) {
+				return err
+			}
 		}
 		return sendText(b, ctx, fmt.Sprintf("用户 %d 疑似刷屏/广告，spam_score=%d，已禁言 %s。", msg.From.Id, score, duration.Round(time.Second)), nil)
 	case "ban":

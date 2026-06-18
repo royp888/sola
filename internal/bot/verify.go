@@ -266,11 +266,9 @@ func (a *App) handleVerifyCheck(b *gotgbot.Bot, ctx *ext.Context, payload Callba
 		}
 		return answerCallback(b, ctx, fmt.Sprintf("答案不对，还剩 %d 次", result.RemainingAttempts))
 	}
-	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), &gotgbot.RestrictChatMemberOpts{UseIndependentChatPermissions: true}); err != nil {
+	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), nil); err != nil {
 		// Regular groups don't support restrictChatMember (only supergroups do).
 		// For regular groups, members always have full permissions — restrict is a no-op.
-		// We log and continue: the user gets "验证通过" and the challenge message is cleaned up.
-		// Kick-on-failure is handled separately by kickUnverifiedMember, which works in both types.
 		log.Printf("restrictChatMember after verify (chat=%d user=%d): %v", chatID, userID, err)
 	}
 	if ctx.CallbackQuery.Message != nil {
@@ -325,11 +323,7 @@ func (a *App) handleVerifyAnswer(b *gotgbot.Bot, ctx *ext.Context, payload Callb
 		return answerCallback(b, ctx, fmt.Sprintf("答案不对，还剩 %d 次", result.RemainingAttempts))
 	}
 	// Correct answer
-	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), &gotgbot.RestrictChatMemberOpts{UseIndependentChatPermissions: true}); err != nil {
-		// Regular groups don't support restrictChatMember (only supergroups do).
-		// For regular groups, members always have full permissions — restrict is a no-op.
-		// We log and continue: the user gets "验证通过" and the challenge message is cleaned up.
-		// Kick-on-failure is handled separately by kickUnverifiedMember, which works in both types.
+	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), nil); err != nil {
 		log.Printf("restrictChatMember after verify answer (chat=%d user=%d): %v", chatID, userID, err)
 	}
 	if ctx.CallbackQuery.Message != nil {
@@ -354,7 +348,10 @@ func (a *App) routeVerifyCallback(b *gotgbot.Bot, ctx *ext.Context, payload Call
 }
 
 func (a *App) restrictForVerification(b *gotgbot.Bot, scope RequestScope, userID int64) error {
-	_, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, userID, mutePermissions(), &gotgbot.RestrictChatMemberOpts{UseIndependentChatPermissions: true})
+	_, err := b.RestrictChatMemberWithContext(scope.Context, scope.Chat.ID, userID, mutePermissions(), nil)
+	if isSuperGroupOnlyError(err) {
+		return nil
+	}
 	return err
 }
 
@@ -701,9 +698,11 @@ func (a *App) handlePollAnswer(b *gotgbot.Bot, ctx *ext.Context) error {
 		return nil
 	}
 
-	// Correct answer - restore permissions
-	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), &gotgbot.RestrictChatMemberOpts{UseIndependentChatPermissions: true}); err != nil {
-		return err
+	// Correct answer - restore permissions (no-op on regular groups, only works on supergroups)
+	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), nil); err != nil {
+		if !isSuperGroupOnlyError(err) {
+			return err
+		}
 	}
 	_ = a.clearUnverifiedKey(chatID, userID)
 	_ = a.services.Admin.RecordVerifyEvent(requestScope(ctx).Context, chatID, userID, "verify_pass", "投票验证通过")
