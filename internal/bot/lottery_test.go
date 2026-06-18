@@ -3,8 +3,6 @@ package bot
 import (
 	"strings"
 	"testing"
-
-	"github.com/dabowin/sola/internal/api"
 )
 
 func TestLotteryJoinButtonVisibilityByJoinType(t *testing.T) {
@@ -29,7 +27,7 @@ func TestLotteryJoinButtonVisibilityByJoinType(t *testing.T) {
 }
 
 func TestLotteryAnnouncementTextSeparatesButtonAndKeyword(t *testing.T) {
-	buttonText := lotteryAnnouncementText(api.Lottery{
+	buttonText := lotteryAnnouncementText(Lottery{
 		ID:          1,
 		Title:       "button draw",
 		Prize:       "coupon",
@@ -46,7 +44,7 @@ func TestLotteryAnnouncementTextSeparatesButtonAndKeyword(t *testing.T) {
 		t.Fatalf("button announcement should not mention keyword: %s", buttonText)
 	}
 
-	keywordText := lotteryAnnouncementText(api.Lottery{
+	keywordText := lotteryAnnouncementText(Lottery{
 		ID:          2,
 		Title:       "keyword draw",
 		Prize:       "coupon",

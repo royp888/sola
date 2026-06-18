@@ -9,7 +9,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/dabowin/sola/internal/api"
 )
 
 func (a *App) registerLotteryHandlers(d *ext.Dispatcher) {
@@ -307,45 +306,45 @@ func parseLotteryID(raw string) (int64, error) {
 	return value, nil
 }
 
-func parseLotteryCreateRequest(ctx *ext.Context, chatID int64, createdBy int64) (api.LotteryCreateRequest, error) {
+func parseLotteryCreateRequest(ctx *ext.Context, chatID int64, createdBy int64) (LotteryCreateRequest, error) {
 	tail := lotteryCommandTail(ctx)
 	if tail == "" {
-		return api.LotteryCreateRequest{}, fmt.Errorf("缺少创建参数")
+		return LotteryCreateRequest{}, fmt.Errorf("缺少创建参数")
 	}
 	lowerTail := strings.ToLower(tail)
 	if lowerTail != "create" && !strings.HasPrefix(lowerTail, "create ") {
-		return api.LotteryCreateRequest{}, fmt.Errorf("缺少 create 子命令")
+		return LotteryCreateRequest{}, fmt.Errorf("缺少 create 子命令")
 	}
 	raw := strings.TrimSpace(tail[len("create"):])
 	parts := strings.Split(raw, "|")
 	if len(parts) != 6 && len(parts) != 8 {
-		return api.LotteryCreateRequest{}, fmt.Errorf("创建参数需要 6 段或 8 段，用 | 分隔")
+		return LotteryCreateRequest{}, fmt.Errorf("创建参数需要 6 段或 8 段，用 | 分隔")
 	}
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 	title := parts[0]
 	if title == "" {
-		return api.LotteryCreateRequest{}, fmt.Errorf("标题不能为空")
+		return LotteryCreateRequest{}, fmt.Errorf("标题不能为空")
 	}
 	cost, err := parseNonNegativeInt(parts[2], "参与消耗")
 	if err != nil {
-		return api.LotteryCreateRequest{}, err
+		return LotteryCreateRequest{}, err
 	}
 	maxParticipants, err := parseNonNegativeInt(parts[3], "人数上限")
 	if err != nil {
-		return api.LotteryCreateRequest{}, err
+		return LotteryCreateRequest{}, err
 	}
 	winners, err := strconv.Atoi(parts[4])
 	if err != nil || winners <= 0 {
-		return api.LotteryCreateRequest{}, fmt.Errorf("中奖人数必须是正整数")
+		return LotteryCreateRequest{}, fmt.Errorf("中奖人数必须是正整数")
 	}
 	endAt, err := time.ParseInLocation("2006-01-02 15:04", parts[5], chinaLocation())
 	if err != nil {
-		return api.LotteryCreateRequest{}, fmt.Errorf("结束时间格式必须是 YYYY-MM-DD HH:mm")
+		return LotteryCreateRequest{}, fmt.Errorf("结束时间格式必须是 YYYY-MM-DD HH:mm")
 	}
 	if !endAt.After(time.Now()) {
-		return api.LotteryCreateRequest{}, fmt.Errorf("结束时间必须晚于当前时间")
+		return LotteryCreateRequest{}, fmt.Errorf("结束时间必须晚于当前时间")
 	}
 	joinType := "button"
 	joinKeyword := ""
@@ -353,7 +352,7 @@ func parseLotteryCreateRequest(ctx *ext.Context, chatID int64, createdBy int64) 
 		joinType = strings.TrimSpace(parts[6])
 		joinKeyword = strings.TrimSpace(parts[7])
 	}
-	return api.LotteryCreateRequest{
+	return LotteryCreateRequest{
 		ChatID:          chatID,
 		Title:           title,
 		Prize:           parts[1],
@@ -390,7 +389,7 @@ func lotteryCommandTail(ctx *ext.Context) string {
 	return strings.TrimSpace(parts[1])
 }
 
-func sendLotteryAnnouncement(b *gotgbot.Bot, ctx *ext.Context, lottery api.Lottery) error {
+func sendLotteryAnnouncement(b *gotgbot.Bot, ctx *ext.Context, lottery Lottery) error {
 	text := lotteryAnnouncementText(lottery)
 	opts := &gotgbot.SendMessageOpts{}
 	if lotteryHasJoinButton(lottery.JoinType) {
@@ -404,7 +403,7 @@ func sendLotteryAnnouncement(b *gotgbot.Bot, ctx *ext.Context, lottery api.Lotte
 	return err
 }
 
-func lotteryAnnouncementText(lottery api.Lottery) string {
+func lotteryAnnouncementText(lottery Lottery) string {
 	var builder strings.Builder
 	title := lotteryJoinTypeLabel(lottery.JoinType)
 	if lottery.ID > 0 {
@@ -509,7 +508,7 @@ func callbackAnswerText(text string) string {
 	return string(runes[:177]) + "..."
 }
 
-func formatActiveLotteryItems(items []api.Lottery) string {
+func formatActiveLotteryItems(items []Lottery) string {
 	if len(items) == 0 {
 		return "🎁 抽奖大厅\n\n当前没有进行中的抽奖。\n管理员可以直接点下方“创建抽奖”，成员后续在群里用按钮或口令参与。"
 	}
@@ -539,7 +538,7 @@ func formatActiveLotteryItems(items []api.Lottery) string {
 	return strings.TrimSpace(builder.String())
 }
 
-func formatRecentLotteryItems(items []api.Lottery) string {
+func formatRecentLotteryItems(items []Lottery) string {
 	if len(items) == 0 {
 		return "🎁 抽奖大厅\n\n暂无抽奖。"
 	}
@@ -577,7 +576,7 @@ func lotteryStatusLabel(status string) string {
 	}
 }
 
-func lotteryMenuMarkup(items []api.Lottery, canCreate bool) *gotgbot.SendMessageOpts {
+func lotteryMenuMarkup(items []Lottery, canCreate bool) *gotgbot.SendMessageOpts {
 	rows := make([][]gotgbot.InlineKeyboardButton, 0, len(items)+4)
 	for _, item := range items {
 		id := strconv.FormatInt(item.ID, 10)
@@ -606,7 +605,7 @@ func lotteryMenuMarkup(items []api.Lottery, canCreate bool) *gotgbot.SendMessage
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: rows}}
 }
 
-func lotteryDetailMarkup(lottery api.Lottery, groupView bool) *gotgbot.SendMessageOpts {
+func lotteryDetailMarkup(lottery Lottery, groupView bool) *gotgbot.SendMessageOpts {
 	id := strconv.FormatInt(lottery.ID, 10)
 	rows := [][]gotgbot.InlineKeyboardButton{}
 	first := []gotgbot.InlineKeyboardButton{}

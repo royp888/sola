@@ -28,26 +28,26 @@ func NewAPIDependencies(cfg config.Config, st *store.Store) api.Dependencies {
 	moderation := NewModerationService(st)
 	autoReplies := NewAutoReplyService(st)
 	return api.Dependencies{
-		Auth:             admin,
-		BotConfig:        &botConfigService{},
-		Chats:            &chatBindingService{store: st},
-		ChatPointConfigs: &chatPointConfigService{points: NewPointsService(st)},
-		Points:           &pointsAPIService{points: NewPointsService(st)},
-		Admin:            &adminAPIService{admin: NewAdminService(st, st.Redis), botToken: cfg.Bot.Token},
-		Lotteries:        &lotteryAPIService{lotteries: NewLotteryService(st), store: st},
-		Levels:           &levelAPIService{levels: levels},
-		AdminViolations:  &adminViolationAPIService{moderation: moderation},
-		Keywords:         &keywordAPIService{moderation: moderation},
-		AutoReplies:      &autoReplyAPIService{service: autoReplies},
-		Backups:          &backupAPIService{backup: NewBackupService(st)},
-		Templates:        &templateAPIService{templates: NewMessageTemplateService(st)},
-		InviteLinks:      &inviteLinkAPIService{inviteLinks: NewInviteLinkService(st, cfg.Bot.Token)},
-		Posts:            &postAPIService{store: st},
-		Schedules:        &scheduleAPIService{store: st},
-		Stats:            &statsAPIService{store: st},
-		Users:            &userAPIService{store: st},
-		AuditLogs:        &auditLogAPIService{store: st},
-		SystemSettings:   &systemSettingsService{store: st, cfg: cfg},
+		Auth:                  admin,
+		BotConfig:             &botConfigService{},
+		Chats:                 &apiChatBindingService{service: &chatBindingService{store: st}},
+		ChatPointConfigs:      &chatPointConfigService{points: NewPointsService(st)},
+		Points:                &pointsAPIService{points: NewPointsService(st)},
+		Admin:                 &adminAPIService{admin: NewAdminService(st, st.Redis), botToken: cfg.Bot.Token},
+		Lotteries:             &lotteryAPIService{lotteries: NewLotteryService(st), store: st},
+		Levels:                &levelAPIService{levels: levels},
+		AdminViolations:       &adminViolationAPIService{moderation: moderation},
+		Keywords:              &keywordAPIService{moderation: moderation},
+		AutoReplies:           &autoReplyAPIService{service: autoReplies},
+		Backups:               &backupAPIService{backup: NewBackupService(st)},
+		Templates:             &templateAPIService{templates: NewMessageTemplateService(st)},
+		InviteLinks:           &inviteLinkAPIService{inviteLinks: NewInviteLinkService(st, cfg.Bot.Token)},
+		Posts:                 &postAPIService{store: st},
+		Schedules:             &scheduleAPIService{store: st},
+		Stats:                 &statsAPIService{store: st},
+		Users:                 &userAPIService{store: st},
+		AuditLogs:             &auditLogAPIService{store: st},
+		SystemSettings:        &systemSettingsService{store: st, cfg: cfg},
 		Redis:                 st.Redis,
 		AllowedOriginSet:      cfg.App.AllowedOrigins,
 		EnableSwagger:         cfg.App.EnableSwagger,
@@ -236,9 +236,9 @@ func (s *botConfigService) Update(ctx context.Context, req api.BotConfigUpdateRe
 
 type chatBindingService struct{ store *store.Store }
 
-func (s *chatBindingService) Bind(ctx context.Context, req api.ChatBindingRequest) (*api.ChatBinding, error) {
+func (s *chatBindingService) Bind(ctx context.Context, req bot.ChatBindingRequest) (*bot.ChatBinding, error) {
 	if s.store == nil || s.store.DB == nil {
-		return &api.ChatBinding{ChatID: req.ChatID, ChatType: req.ChatType, Title: req.Title, Username: req.Username, InviteLink: req.InviteLink, BoundBy: req.BoundBy, Description: req.Description, BoundAt: time.Now()}, nil
+		return &bot.ChatBinding{ChatID: req.ChatID, ChatType: req.ChatType, Title: req.Title, Username: req.Username, InviteLink: req.InviteLink, BoundBy: req.BoundBy, Description: req.Description, BoundAt: time.Now()}, nil
 	}
 	var owner *model.User
 	if req.OwnerTelegramUserID != 0 {
@@ -290,7 +290,7 @@ func (s *chatBindingService) Bind(ctx context.Context, req api.ChatBindingReques
 			return nil, err
 		}
 	}
-	return chatBindingToAPI(chat, req.BoundBy), nil
+	return chatBindingToBot(chat, req.BoundBy), nil
 }
 
 func (s *chatBindingService) Unbind(ctx context.Context, chatID int64) error {
@@ -300,41 +300,90 @@ func (s *chatBindingService) Unbind(ctx context.Context, chatID int64) error {
 	return s.store.DB.WithContext(ctx).Model(&model.TelegramChat{}).Where("telegram_chat_id = ?", chatID).Update("status", "inactive").Error
 }
 
-func (s *chatBindingService) List(ctx context.Context, query api.CommonListQuery) ([]api.ChatBinding, error) {
+func (s *chatBindingService) List(ctx context.Context, query bot.CommonListQuery) ([]bot.ChatBinding, error) {
 	if s.store == nil || s.store.DB == nil {
-		return []api.ChatBinding{}, nil
+		return []bot.ChatBinding{}, nil
 	}
 	db := s.store.DB.WithContext(ctx).Model(&model.TelegramChat{})
 	if strings.TrimSpace(query.OwnerUserID) != "" {
 		if ownerID, err := uuid.Parse(strings.TrimSpace(query.OwnerUserID)); err == nil {
 			db = db.Where("owner_user_id = ?", ownerID)
 		} else {
-			return []api.ChatBinding{}, nil
+			return []bot.ChatBinding{}, nil
 		}
 	}
 	var chats []model.TelegramChat
 	if err := db.Order("created_at desc").Limit(normalLimit(query.Limit)).Offset(query.Offset).Find(&chats).Error; err != nil {
 		return nil, err
 	}
-	out := make([]api.ChatBinding, 0, len(chats))
+	out := make([]bot.ChatBinding, 0, len(chats))
 	for _, chat := range chats {
-		out = append(out, *chatBindingToAPI(chat, ""))
+		out = append(out, *chatBindingToBot(chat, ""))
 	}
 	return out, nil
 }
 
-func (s *chatBindingService) ListByTelegramUser(ctx context.Context, telegramUserID int64, limit int) ([]api.ChatBinding, error) {
+func (s *chatBindingService) ListByTelegramUser(ctx context.Context, telegramUserID int64, limit int) ([]bot.ChatBinding, error) {
 	if s.store == nil || s.store.DB == nil || telegramUserID == 0 {
-		return []api.ChatBinding{}, nil
+		return []bot.ChatBinding{}, nil
 	}
 	var user model.User
 	if err := s.store.DB.WithContext(ctx).Where("telegram_user_id = ?", telegramUserID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return []api.ChatBinding{}, nil
+			return []bot.ChatBinding{}, nil
 		}
 		return nil, err
 	}
-	return s.List(ctx, api.CommonListQuery{OwnerUserID: user.ID.String(), Limit: limit})
+	return s.List(ctx, bot.CommonListQuery{OwnerUserID: user.ID.String(), Limit: limit})
+}
+
+type apiChatBindingService struct {
+	service *chatBindingService
+}
+
+func (s *apiChatBindingService) Bind(ctx context.Context, req api.ChatBindingRequest) (*api.ChatBinding, error) {
+	item, err := s.service.Bind(ctx, bot.ChatBindingRequest{
+		ChatID:              req.ChatID,
+		ChatType:            req.ChatType,
+		Title:               req.Title,
+		Username:            req.Username,
+		InviteLink:          req.InviteLink,
+		BoundBy:             req.BoundBy,
+		Description:         req.Description,
+		OwnerTelegramUserID: req.OwnerTelegramUserID,
+		OwnerUsername:       req.OwnerUsername,
+		OwnerDisplayName:    req.OwnerDisplayName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return botChatBindingToAPI(item), nil
+}
+
+func (s *apiChatBindingService) Unbind(ctx context.Context, chatID int64) error {
+	return s.service.Unbind(ctx, chatID)
+}
+
+func (s *apiChatBindingService) List(ctx context.Context, query api.CommonListQuery) ([]api.ChatBinding, error) {
+	items, err := s.service.List(ctx, bot.CommonListQuery{
+		Limit:       query.Limit,
+		Offset:      query.Offset,
+		Cursor:      query.Cursor,
+		OwnerUserID: query.OwnerUserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]api.ChatBinding, 0, len(items))
+	for _, item := range items {
+		item := item
+		out = append(out, *botChatBindingToAPI(&item))
+	}
+	return out, nil
+}
+
+func (s *apiChatBindingService) UserOwnsChat(ctx context.Context, userID string, chatID string) (bool, error) {
+	return s.service.UserOwnsChat(ctx, userID, chatID)
 }
 func (s *chatBindingService) UserOwnsChat(ctx context.Context, userID string, chatID string) (bool, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
@@ -509,14 +558,40 @@ func (s *lotteryAPIService) List(ctx context.Context, query api.LotteryListQuery
 	if s == nil || s.lotteries == nil {
 		return []api.Lottery{}, nil
 	}
-	return s.lotteries.List(ctx, query)
+	items, err := s.lotteries.List(ctx, bot.LotteryListQuery{
+		ChatID:      query.ChatID,
+		Status:      query.Status,
+		Limit:       query.Limit,
+		Offset:      query.Offset,
+		Cursor:      query.Cursor,
+		OwnerUserID: query.OwnerUserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return botLotteriesToAPI(items), nil
 }
 
 func (s *lotteryAPIService) Create(ctx context.Context, req api.LotteryCreateRequest) (*api.Lottery, error) {
 	if s == nil || s.lotteries == nil {
 		return nil, gorm.ErrInvalidDB
 	}
-	return s.lotteries.Create(ctx, req)
+	item, err := s.lotteries.Create(ctx, bot.LotteryCreateRequest{
+		ChatID:          req.ChatID,
+		Title:           req.Title,
+		Prize:           req.Prize,
+		CostPoints:      req.CostPoints,
+		MaxParticipants: req.MaxParticipants,
+		WinnerCount:     req.WinnerCount,
+		EndAt:           req.EndAt,
+		CreatedBy:       req.CreatedBy,
+		JoinType:        req.JoinType,
+		JoinKeyword:     req.JoinKeyword,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return botLotteryToAPI(item), nil
 }
 
 func (s *lotteryAPIService) Cancel(ctx context.Context, id int64, ownerUserID string) error {
@@ -538,7 +613,11 @@ func (s *lotteryAPIService) Entries(ctx context.Context, id int64, ownerUserID s
 	if err := ensureOwnedTelegramChatID(ctx, s.store, ownerUserID, chatID); err != nil {
 		return nil, err
 	}
-	return s.lotteries.Entries(ctx, id)
+	items, err := s.lotteries.Entries(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return botLotteryEntriesToAPI(items), nil
 }
 
 func (s *lotteryAPIService) Winners(ctx context.Context, id int64, ownerUserID string) ([]api.LotteryEntry, error) {
@@ -549,7 +628,11 @@ func (s *lotteryAPIService) Winners(ctx context.Context, id int64, ownerUserID s
 	if err := ensureOwnedTelegramChatID(ctx, s.store, ownerUserID, chatID); err != nil {
 		return nil, err
 	}
-	return s.lotteries.Winners(ctx, id)
+	items, err := s.lotteries.Winners(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return botLotteryEntriesToAPI(items), nil
 }
 
 type levelAPIService struct {
@@ -2365,12 +2448,12 @@ func scopeTelegramChatID(db *gorm.DB, column string, chatID int64, ids []int64) 
 	return db
 }
 
-func chatBindingToAPI(chat model.TelegramChat, boundBy string) *api.ChatBinding {
+func chatBindingToBot(chat model.TelegramChat, boundBy string) *bot.ChatBinding {
 	ownerUserID := ""
 	if chat.OwnerUserID != nil {
 		ownerUserID = chat.OwnerUserID.String()
 	}
-	return &api.ChatBinding{
+	return &bot.ChatBinding{
 		ChatID:      chat.TelegramChatID,
 		ChatType:    chat.Type,
 		Title:       deref(chat.Title),
@@ -2381,6 +2464,74 @@ func chatBindingToAPI(chat model.TelegramChat, boundBy string) *api.ChatBinding 
 		OwnerUserID: ownerUserID,
 		BoundAt:     chat.CreatedAt,
 	}
+}
+
+func botChatBindingToAPI(item *bot.ChatBinding) *api.ChatBinding {
+	if item == nil {
+		return nil
+	}
+	return &api.ChatBinding{
+		ChatID:      item.ChatID,
+		ChatType:    item.ChatType,
+		Title:       item.Title,
+		Username:    item.Username,
+		InviteLink:  item.InviteLink,
+		BoundBy:     item.BoundBy,
+		Description: item.Description,
+		OwnerUserID: item.OwnerUserID,
+		BoundAt:     item.BoundAt,
+	}
+}
+
+func botLotteryToAPI(item *bot.Lottery) *api.Lottery {
+	if item == nil {
+		return nil
+	}
+	return &api.Lottery{
+		ID:              item.ID,
+		ChatID:          item.ChatID,
+		Title:           item.Title,
+		Prize:           item.Prize,
+		CostPoints:      item.CostPoints,
+		MaxParticipants: item.MaxParticipants,
+		WinnerCount:     item.WinnerCount,
+		EndAt:           item.EndAt,
+		Status:          item.Status,
+		JoinType:        item.JoinType,
+		JoinKeyword:     item.JoinKeyword,
+		CreatedBy:       item.CreatedBy,
+		CreatedAt:       item.CreatedAt,
+		EntryCount:      item.EntryCount,
+		WinnerCountDone: item.WinnerCountDone,
+	}
+}
+
+func botLotteriesToAPI(items []bot.Lottery) []api.Lottery {
+	out := make([]api.Lottery, 0, len(items))
+	for _, item := range items {
+		item := item
+		out = append(out, *botLotteryToAPI(&item))
+	}
+	return out
+}
+
+func botLotteryEntryToAPI(item bot.LotteryEntry) api.LotteryEntry {
+	return api.LotteryEntry{
+		ID:        item.ID,
+		LotteryID: item.LotteryID,
+		UserID:    item.UserID,
+		Username:  item.Username,
+		JoinedAt:  item.JoinedAt,
+		IsWinner:  item.IsWinner,
+	}
+}
+
+func botLotteryEntriesToAPI(items []bot.LotteryEntry) []api.LotteryEntry {
+	out := make([]api.LotteryEntry, 0, len(items))
+	for _, item := range items {
+		out = append(out, botLotteryEntryToAPI(item))
+	}
+	return out
 }
 
 func modelPostToAPI(post model.Post, chatID int64) *api.Post {

@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/dabowin/sola/internal/api"
+	"github.com/dabowin/sola/internal/bot"
 	"github.com/dabowin/sola/internal/model"
 	"github.com/dabowin/sola/internal/store"
 )
@@ -32,9 +32,9 @@ func NewLotteryService(st *store.Store, clients ...*redis.Client) *LotteryServic
 	return &LotteryService{store: st, redis: client}
 }
 
-func (s *LotteryService) List(ctx context.Context, query api.LotteryListQuery) ([]api.Lottery, error) {
+func (s *LotteryService) List(ctx context.Context, query bot.LotteryListQuery) ([]bot.Lottery, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
-		return []api.Lottery{}, nil
+		return []bot.Lottery{}, nil
 	}
 
 	db := s.store.DB.WithContext(ctx).Model(&model.Lottery{})
@@ -55,7 +55,7 @@ func (s *LotteryService) List(ctx context.Context, query api.LotteryListQuery) (
 		return nil, err
 	}
 
-	items := make([]api.Lottery, 0, len(records))
+	items := make([]bot.Lottery, 0, len(records))
 	counts, err := s.lotteryEntryCounts(ctx, lotteryIDs(records))
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (s *LotteryService) List(ctx context.Context, query api.LotteryListQuery) (
 	return items, nil
 }
 
-func (s *LotteryService) Create(ctx context.Context, req api.LotteryCreateRequest) (*api.Lottery, error) {
+func (s *LotteryService) Create(ctx context.Context, req bot.LotteryCreateRequest) (*bot.Lottery, error) {
 	if req.ChatID == 0 {
 		return nil, errors.New("chat_id is required")
 	}
@@ -83,7 +83,7 @@ func (s *LotteryService) Create(ctx context.Context, req api.LotteryCreateReques
 	}
 	if s == nil || s.store == nil || s.store.DB == nil {
 		now := time.Now()
-		return &api.Lottery{
+		return &bot.Lottery{
 			ID:              now.Unix(),
 			ChatID:          req.ChatID,
 			Title:           req.Title,
@@ -131,11 +131,11 @@ func (s *LotteryService) Cancel(ctx context.Context, id int64) error {
 	return s.cancelLottery(ctx, id, 0)
 }
 
-func (s *LotteryService) Entries(ctx context.Context, id int64) ([]api.LotteryEntry, error) {
+func (s *LotteryService) Entries(ctx context.Context, id int64) ([]bot.LotteryEntry, error) {
 	return s.listEntries(ctx, id, false)
 }
 
-func (s *LotteryService) Winners(ctx context.Context, id int64) ([]api.LotteryEntry, error) {
+func (s *LotteryService) Winners(ctx context.Context, id int64) ([]bot.LotteryEntry, error) {
 	return s.listEntries(ctx, id, true)
 }
 
@@ -170,27 +170,27 @@ func (s *LotteryService) ListActive(ctx context.Context, chatID int64) (string, 
 	return strings.TrimSpace(builder.String()), nil
 }
 
-func (s *LotteryService) ListActiveItems(ctx context.Context, chatID int64, limit int) ([]api.Lottery, error) {
+func (s *LotteryService) ListActiveItems(ctx context.Context, chatID int64, limit int) ([]bot.Lottery, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
-		return []api.Lottery{}, nil
+		return []bot.Lottery{}, nil
 	}
-	return s.List(ctx, api.LotteryListQuery{ChatID: chatID, Status: "active", Limit: limit})
+	return s.List(ctx, bot.LotteryListQuery{ChatID: chatID, Status: "active", Limit: limit})
 }
 
-func (s *LotteryService) ListItems(ctx context.Context, chatID int64, limit int) ([]api.Lottery, error) {
+func (s *LotteryService) ListItems(ctx context.Context, chatID int64, limit int) ([]bot.Lottery, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
-		return []api.Lottery{}, nil
+		return []bot.Lottery{}, nil
 	}
-	return s.List(ctx, api.LotteryListQuery{ChatID: chatID, Limit: limit})
+	return s.List(ctx, bot.LotteryListQuery{ChatID: chatID, Limit: limit})
 }
 
-func (s *LotteryService) GetItem(ctx context.Context, chatID int64, lotteryID int64) (api.Lottery, error) {
+func (s *LotteryService) GetItem(ctx context.Context, chatID int64, lotteryID int64) (bot.Lottery, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
-		return api.Lottery{}, nil
+		return bot.Lottery{}, nil
 	}
 	var record model.Lottery
 	if err := s.store.DB.WithContext(ctx).Where("id = ? AND chat_id = ?", lotteryID, chatID).First(&record).Error; err != nil {
-		return api.Lottery{}, err
+		return bot.Lottery{}, err
 	}
 	return s.lotteryToAPI(ctx, record)
 }
@@ -517,9 +517,9 @@ func adjustLotteryPointsTx(tx *gorm.DB, chatID int64, userID int64, delta int, r
 	}).Error
 }
 
-func (s *LotteryService) listEntries(ctx context.Context, id int64, winnersOnly bool) ([]api.LotteryEntry, error) {
+func (s *LotteryService) listEntries(ctx context.Context, id int64, winnersOnly bool) ([]bot.LotteryEntry, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
-		return []api.LotteryEntry{}, nil
+		return []bot.LotteryEntry{}, nil
 	}
 	db := s.store.DB.WithContext(ctx).Where("lottery_id = ?", id)
 	if winnersOnly {
@@ -529,14 +529,14 @@ func (s *LotteryService) listEntries(ctx context.Context, id int64, winnersOnly 
 	if err := db.Order("joined_at asc").Find(&records).Error; err != nil {
 		return nil, err
 	}
-	items := make([]api.LotteryEntry, 0, len(records))
+	items := make([]bot.LotteryEntry, 0, len(records))
 	for _, record := range records {
 		items = append(items, lotteryEntryToAPI(record))
 	}
 	return items, nil
 }
 
-func (s *LotteryService) lotteryToAPI(ctx context.Context, record model.Lottery) (api.Lottery, error) {
+func (s *LotteryService) lotteryToAPI(ctx context.Context, record model.Lottery) (bot.Lottery, error) {
 	item := lotteryToAPIWithCounts(record, lotteryEntryCount{})
 	if s == nil || s.store == nil || s.store.DB == nil {
 		return item, nil
@@ -553,8 +553,8 @@ type lotteryEntryCount struct {
 	WinnerCountDone int64
 }
 
-func lotteryToAPIWithCounts(record model.Lottery, count lotteryEntryCount) api.Lottery {
-	return api.Lottery{
+func lotteryToAPIWithCounts(record model.Lottery, count lotteryEntryCount) bot.Lottery {
+	return bot.Lottery{
 		ID:              record.ID,
 		ChatID:          record.ChatID,
 		Title:           record.Title,
@@ -611,8 +611,8 @@ func (s *LotteryService) lotteryEntryCounts(ctx context.Context, ids []int64) (m
 	return counts, nil
 }
 
-func lotteryEntryToAPI(record model.LotteryEntry) api.LotteryEntry {
-	return api.LotteryEntry{
+func lotteryEntryToAPI(record model.LotteryEntry) bot.LotteryEntry {
+	return bot.LotteryEntry{
 		ID:        record.ID,
 		LotteryID: record.LotteryID,
 		UserID:    record.UserID,

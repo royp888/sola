@@ -8,7 +8,6 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/dabowin/sola/internal/api"
 )
 
 const (
@@ -273,7 +272,7 @@ func (a *App) confirmCreateLottery(b *gotgbot.Bot, ctx *ext.Context, state *Conv
 		}
 		endAt = &parsed
 	}
-	req := api.LotteryCreateRequest{
+	req := LotteryCreateRequest{
 		ChatID:          state.ChatID,
 		Title:           stringVal(state.Data, "title"),
 		Prize:           lotteryPrizeText(state.Data),

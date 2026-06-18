@@ -6,7 +6,6 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/dabowin/sola/internal/api"
 	"github.com/dabowin/sola/internal/model"
 	"github.com/redis/go-redis/v9"
 )
@@ -135,9 +134,44 @@ type TelegramAccessService interface {
 }
 
 type ChatBindingService interface {
-	Bind(ctx context.Context, req api.ChatBindingRequest) (*api.ChatBinding, error)
-	List(ctx context.Context, query api.CommonListQuery) ([]api.ChatBinding, error)
-	ListByTelegramUser(ctx context.Context, telegramUserID int64, limit int) ([]api.ChatBinding, error)
+	Bind(ctx context.Context, req ChatBindingRequest) (*ChatBinding, error)
+	List(ctx context.Context, query CommonListQuery) ([]ChatBinding, error)
+	ListByTelegramUser(ctx context.Context, telegramUserID int64, limit int) ([]ChatBinding, error)
+}
+
+// ChatBindingRequest 是绑定/更新群组信息时使用的请求类型。
+// 迁移自 internal/api/types.go，供 bot 层和 service 层共用。
+type ChatBindingRequest struct {
+	ChatID              int64
+	ChatType            string
+	Title               string
+	Username            string
+	InviteLink          string
+	BoundBy             string
+	Description         string
+	OwnerTelegramUserID int64
+	OwnerUsername       string
+	OwnerDisplayName    string
+}
+
+// ChatBinding 是从数据库读出的群组绑定信息，供 bot 层展示使用。
+type ChatBinding struct {
+	ChatID      int64
+	ChatType    string
+	Title       string
+	Username    string
+	InviteLink  string
+	BoundBy     string
+	Description string
+	OwnerUserID string
+	BoundAt     time.Time
+}
+
+type CommonListQuery struct {
+	Limit       int
+	Offset      int
+	Cursor      string
+	OwnerUserID string
 }
 
 type RedisStateService interface {
@@ -302,15 +336,64 @@ type VerifyStats struct {
 }
 
 type LotteryService interface {
-	Create(ctx context.Context, req api.LotteryCreateRequest) (*api.Lottery, error)
-	GetItem(ctx context.Context, chatID int64, lotteryID int64) (api.Lottery, error)
-	ListItems(ctx context.Context, chatID int64, limit int) ([]api.Lottery, error)
-	ListActiveItems(ctx context.Context, chatID int64, limit int) ([]api.Lottery, error)
+	Create(ctx context.Context, req LotteryCreateRequest) (*Lottery, error)
+	GetItem(ctx context.Context, chatID int64, lotteryID int64) (Lottery, error)
+	ListItems(ctx context.Context, chatID int64, limit int) ([]Lottery, error)
+	ListActiveItems(ctx context.Context, chatID int64, limit int) ([]Lottery, error)
 	ListActive(ctx context.Context, chatID int64) (string, error)
 	Info(ctx context.Context, chatID int64, lotteryID int64) (string, error)
 	Join(ctx context.Context, chatID int64, lotteryID int64, userID int64, username ...string) (string, error)
 	JoinByKeyword(ctx context.Context, chatID int64, keyword string, userID int64, username string) (bool, string, int64, error)
 	CancelForChat(ctx context.Context, chatID int64, lotteryID int64, operatorID int64) (string, error)
+}
+
+type LotteryListQuery struct {
+	ChatID      int64
+	Status      string
+	Limit       int
+	Offset      int
+	Cursor      string
+	OwnerUserID string
+}
+
+type LotteryCreateRequest struct {
+	ChatID          int64
+	Title           string
+	Prize           string
+	CostPoints      int
+	MaxParticipants int
+	WinnerCount     int
+	EndAt           *time.Time
+	CreatedBy       int64
+	JoinType        string
+	JoinKeyword     string
+}
+
+type Lottery struct {
+	ID              int64
+	ChatID          int64
+	Title           string
+	Prize           string
+	CostPoints      int
+	MaxParticipants int
+	WinnerCount     int
+	EndAt           *time.Time
+	Status          string
+	JoinType        string
+	JoinKeyword     string
+	CreatedBy       int64
+	CreatedAt       time.Time
+	EntryCount      int64
+	WinnerCountDone int64
+}
+
+type LotteryEntry struct {
+	ID        int64
+	LotteryID int64
+	UserID    int64
+	Username  string
+	JoinedAt  time.Time
+	IsWinner  bool
 }
 
 type PublishService interface {

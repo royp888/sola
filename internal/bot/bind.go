@@ -6,7 +6,6 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/dabowin/sola/internal/api"
 )
 
 func (a *App) handleBind(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -41,7 +40,7 @@ func (a *App) checkBotAdmin(b *gotgbot.Bot, ctx *ext.Context) error {
 		return respondText(b, ctx, "只有群主或管理员可以绑定这个群。请用群管理员账号发送 /bind。", groupMarkup())
 	}
 	if status.IsAdmin && a.services.ChatBindings != nil {
-		if _, err := a.services.ChatBindings.Bind(scope.Context, api.ChatBindingRequest{
+		if _, err := a.services.ChatBindings.Bind(scope.Context, ChatBindingRequest{
 			ChatID:              scope.Chat.ID,
 			ChatType:            scope.Chat.Type,
 			Title:               scope.Chat.Title,

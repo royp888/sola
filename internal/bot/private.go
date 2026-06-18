@@ -8,7 +8,6 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/dabowin/sola/internal/api"
 	"github.com/dabowin/sola/internal/model"
 )
 
@@ -24,7 +23,7 @@ func (a *App) routePrivateCallback(b *gotgbot.Bot, ctx *ext.Context, payload Cal
 		"lottery_both_create":    true,
 		"lottery_active":         true,
 	}
-	var selectedChat *api.ChatBinding
+	var selectedChat *ChatBinding
 	if needsChat[payload.Action] {
 		chat, ok, err := a.selectedPrivateChat(ctx)
 		if err != nil {
@@ -158,16 +157,16 @@ func (a *App) showPrivateConsole(b *gotgbot.Bot, ctx *ext.Context) error {
 	return respondText(b, ctx, text, privateConsoleMarkup(chat))
 }
 
-func (a *App) listPrivateManagedChats(ctx *ext.Context) ([]api.ChatBinding, error) {
+func (a *App) listPrivateManagedChats(ctx *ext.Context) ([]ChatBinding, error) {
 	scope := requestScope(ctx)
 	if scope.Actor.ID == 0 || a.services.ChatBindings == nil {
-		return []api.ChatBinding{}, nil
+		return []ChatBinding{}, nil
 	}
 	chats, err := a.services.ChatBindings.ListByTelegramUser(scope.Context, scope.Actor.ID, 100)
 	if err != nil {
 		return nil, err
 	}
-	filtered := make([]api.ChatBinding, 0, len(chats))
+	filtered := make([]ChatBinding, 0, len(chats))
 	for _, chat := range chats {
 		if isManagedChatType(chat.ChatType) {
 			filtered = append(filtered, chat)
@@ -176,7 +175,7 @@ func (a *App) listPrivateManagedChats(ctx *ext.Context) ([]api.ChatBinding, erro
 	return filtered, nil
 }
 
-func (a *App) currentPrivateChat(ctx context.Context, chats []api.ChatBinding, userID int64) (api.ChatBinding, bool) {
+func (a *App) currentPrivateChat(ctx context.Context, chats []ChatBinding, userID int64) (ChatBinding, bool) {
 	if selectedID, ok := a.getSelectedChatID(ctx, userID); ok {
 		for _, chat := range chats {
 			if chat.ChatID == selectedID {
@@ -185,26 +184,26 @@ func (a *App) currentPrivateChat(ctx context.Context, chats []api.ChatBinding, u
 		}
 	}
 	if len(chats) == 0 {
-		return api.ChatBinding{}, false
+		return ChatBinding{}, false
 	}
 	return chats[0], true
 }
 
-func (a *App) selectedPrivateChat(ctx *ext.Context) (api.ChatBinding, bool, error) {
+func (a *App) selectedPrivateChat(ctx *ext.Context) (ChatBinding, bool, error) {
 	scope := requestScope(ctx)
 	chats, err := a.listPrivateManagedChats(ctx)
 	if err != nil {
-		return api.ChatBinding{}, false, err
+		return ChatBinding{}, false, err
 	}
 	if len(chats) == 0 {
-		return api.ChatBinding{}, false, nil
+		return ChatBinding{}, false, nil
 	}
 	chat, ok := a.currentPrivateChat(scope.Context, chats, scope.Actor.ID)
 	if !ok {
-		return api.ChatBinding{}, false, nil
+		return ChatBinding{}, false, nil
 	}
 	if err := a.setSelectedChatID(scope.Context, scope.Actor.ID, chat.ChatID); err != nil {
-		return api.ChatBinding{}, false, err
+		return ChatBinding{}, false, err
 	}
 	return chat, true, nil
 }
@@ -227,7 +226,7 @@ func privateHomeMarkup(hasChats bool, hasSelection bool) *gotgbot.SendMessageOpt
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: rows}}
 }
 
-func privateConsoleMarkup(chat api.ChatBinding) *gotgbot.SendMessageOpts {
+func privateConsoleMarkup(chat ChatBinding) *gotgbot.SendMessageOpts {
 	chatResource := strconv.FormatInt(chat.ChatID, 10)
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
 		{
@@ -249,7 +248,7 @@ func privateConsoleMarkup(chat api.ChatBinding) *gotgbot.SendMessageOpts {
 	}}}
 }
 
-func (a *App) showPrivateSummary(b *gotgbot.Bot, ctx *ext.Context, chat api.ChatBinding) error {
+func (a *App) showPrivateSummary(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
 	scope := requestScope(ctx)
 	lines := []string{
 		"📊 运行概览",
@@ -268,7 +267,7 @@ func (a *App) showPrivateSummary(b *gotgbot.Bot, ctx *ext.Context, chat api.Chat
 	return respondText(b, ctx, strings.Join(lines, "\n"), privateConsoleMarkup(chat))
 }
 
-func (a *App) showPrivateLotteryCenter(b *gotgbot.Bot, ctx *ext.Context, chat api.ChatBinding) error {
+func (a *App) showPrivateLotteryCenter(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
 	if a.services.Lottery == nil {
 		return respondText(b, ctx, "抽奖服务尚未接入。", privateConsoleMarkup(chat))
 	}
@@ -304,7 +303,7 @@ func (a *App) showPrivateLotteryCenter(b *gotgbot.Bot, ctx *ext.Context, chat ap
 	return respondText(b, ctx, strings.Join(lines, "\n"), privateLotteryMarkup(chat, activeItems))
 }
 
-func privateLotteryMarkup(chat api.ChatBinding, items []api.Lottery) *gotgbot.SendMessageOpts {
+func privateLotteryMarkup(chat ChatBinding, items []Lottery) *gotgbot.SendMessageOpts {
 	chatResource := strconv.FormatInt(chat.ChatID, 10)
 	rows := [][]gotgbot.InlineKeyboardButton{
 		{
@@ -330,7 +329,7 @@ func privateLotteryMarkup(chat api.ChatBinding, items []api.Lottery) *gotgbot.Se
 	rows = append(rows, []gotgbot.InlineKeyboardButton{{Text: "🔙 返回工作台", CallbackData: CallbackData("private", "console")}})
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: rows}}
 }
-func (a *App) showPrivateAdminCenter(b *gotgbot.Bot, ctx *ext.Context, chat api.ChatBinding) error {
+func (a *App) showPrivateAdminCenter(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
 	scope := requestScope(ctx)
 	lines := []string{
 		"🛡 群管中心",
@@ -439,7 +438,7 @@ func lotteryCreateTypePrivateMarkup() *gotgbot.SendMessageOpts {
 	}}}
 }
 
-func chatTitle(chat api.ChatBinding) string {
+func chatTitle(chat ChatBinding) string {
 	if strings.TrimSpace(chat.Title) != "" {
 		return strings.TrimSpace(chat.Title)
 	}
