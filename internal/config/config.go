@@ -98,7 +98,7 @@ func Load(path string) (Config, error) {
 	v.SetDefault("database.max_open_conns", 20)
 	v.SetDefault("database.max_idle_conns", 5)
 	v.SetDefault("database.conn_max_lifetime", "30m")
-	v.SetDefault("redis.addr", "redis:6379")
+	v.SetDefault("redis.addr", "")
 	v.SetDefault("redis.db", 0)
 	v.SetDefault("jwt.issuer", "sola-admin")
 	v.SetDefault("jwt.access_token_ttl", "24h")

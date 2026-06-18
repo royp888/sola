@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -48,11 +49,14 @@ func New(ctx context.Context, path string) (*Resources, error) {
 		return nil, err
 	}
 
-	rdb := platform.OpenRedis(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Warn("redis ping failed", zap.Error(err))
-		_ = rdb.Close()
-		rdb = nil
+	var rdb *redis.Client
+	if strings.TrimSpace(cfg.Redis.Addr) != "" {
+		rdb = platform.OpenRedis(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			log.Warn("redis ping failed; continuing without redis", zap.Error(err))
+			_ = rdb.Close()
+			rdb = nil
+		}
 	}
 
 	st := store.New(db, rdb)
