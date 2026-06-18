@@ -583,6 +583,10 @@ func parseModerationDuration(raw string) (time.Duration, error) {
 	}
 	duration, err := time.ParseDuration(raw)
 	if err != nil || duration <= 0 {
+		// treat bare integers as minutes (e.g. "30" → 30m)
+		if mins, err2 := strconv.Atoi(raw); err2 == nil && mins > 0 {
+			return time.Duration(mins) * time.Minute, nil
+		}
 		return 0, fmt.Errorf("invalid duration")
 	}
 	return duration, nil

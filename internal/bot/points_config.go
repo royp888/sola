@@ -161,7 +161,8 @@ func (a *App) requireTelegramManager(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 	if !ok {
-		return sendText(b, ctx, "需要群主或管理员权限。", nil)
+		_ = sendText(b, ctx, "需要群主或管理员权限。", nil)
+		return fmt.Errorf("permission denied: need group manager")
 	}
 	return nil
 }
