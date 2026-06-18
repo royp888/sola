@@ -1,0 +1,46 @@
+app:
+  name: sola
+  env: development
+  http_addr: :8080
+  admin_username: admin
+  admin_password: change-me
+  admin_password_hash: ""
+  enable_swagger: false
+  allowed_origins:
+    - http://127.0.0.1:5174
+    - http://localhost:5174
+
+bot:
+  token: ""
+  mode: polling
+  default_locale: zh-CN
+  mini_app_url: ""  # Telegram Mini App URL, e.g. https://admin.example.com/mini.html
+
+database:
+  dsn: postgres://sola:sola@postgres:5432/sola?sslmode=disable
+  auto_migrate: false
+  max_open_conns: 20
+  max_idle_conns: 5
+  conn_max_lifetime: 30m
+
+redis:
+  addr: redis:6379
+  password: ""
+  db: 0
+
+jwt:
+  secret: change-this-in-production
+  issuer: sola-admin
+  access_token_ttl: 24h
+
+# AI 垃圾广告检测（使用 LLM 做二次确认）
+# 支持 OpenAI 兼容 API 的所有服务商：
+#   DeepSeek:  provider=deepseek  endpoint=https://api.deepseek.com/v1  model=deepseek-chat
+#   OpenAI:    provider=openai    endpoint=https://api.openai.com/v1    model=gpt-4o-mini
+#   中转站:    provider=custom    endpoint=https://your-proxy.com/v1    model=你的模型名
+ai_filter:
+  enabled: false
+  provider: deepseek
+  api_key: ""
+  model: deepseek-chat
+  endpoint: https://api.deepseek.com/v1
