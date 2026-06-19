@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"regexp"
 	"strings"
@@ -272,11 +273,13 @@ func (a *App) applyKeywordFilterAction(b *gotgbot.Bot, ctx *ext.Context, match K
 			ReplyParameters: &gotgbot.ReplyParameters{MessageId: msg.MessageId},
 		})
 	}
-	_, deleteErr := b.DeleteMessageWithContext(scope.Context, msg.Chat.Id, msg.MessageId, nil)
+	if _, deleteErr := b.DeleteMessageWithContext(scope.Context, msg.Chat.Id, msg.MessageId, nil); deleteErr != nil {
+		log.Printf("keyword filter: delete message failed (chat=%d msg=%d): %v", msg.Chat.Id, msg.MessageId, deleteErr)
+	}
 	switch action {
 	case "warn":
 		if a.services.Admin == nil {
-			return deleteErr
+			return nil
 		}
 		count, limit, err := a.services.Admin.RecordWarn(scope.Context, msg.Chat.Id, msg.From.Id, 0, reason)
 		if err != nil {
@@ -307,7 +310,7 @@ func (a *App) applyKeywordFilterAction(b *gotgbot.Bot, ctx *ext.Context, match K
 		}
 		return sendText(b, ctx, fmt.Sprintf("用户 %d 触发关键词过滤，已封禁。", msg.From.Id), nil)
 	default:
-		return deleteErr
+		return nil
 	}
 }
 
@@ -335,11 +338,13 @@ func (a *App) applySpamScoreAction(b *gotgbot.Bot, ctx *ext.Context, score int, 
 	if reasonText == "" {
 		reasonText = "规则命中"
 	}
-	_, deleteErr := b.DeleteMessageWithContext(scope.Context, msg.Chat.Id, msg.MessageId, nil)
+	if _, deleteErr := b.DeleteMessageWithContext(scope.Context, msg.Chat.Id, msg.MessageId, nil); deleteErr != nil {
+		log.Printf("spam filter: delete message failed (chat=%d msg=%d): %v", msg.Chat.Id, msg.MessageId, deleteErr)
+	}
 	switch action {
 	case "warn":
 		if a.services.Admin == nil {
-			return deleteErr
+			return nil
 		}
 		count, limit, err := a.services.Admin.RecordWarn(scope.Context, msg.Chat.Id, msg.From.Id, 0, fmt.Sprintf("spam_score=%d：%s", score, reasonText))
 		if err != nil {
@@ -373,7 +378,7 @@ func (a *App) applySpamScoreAction(b *gotgbot.Bot, ctx *ext.Context, score int, 
 		}
 		return sendText(b, ctx, fmt.Sprintf("用户 %d 疑似刷屏/广告，spam_score=%d，已封禁。", msg.From.Id, score), nil)
 	default:
-		return deleteErr
+		return nil
 	}
 }
 
