@@ -158,6 +158,7 @@ Without Compose, run the SQL files manually in order. When upgrading, only apply
 
 ## Changelog
 
+- **2026-06-20** v2.1.0 — Redesign private chat as 16-button panel (no commands for group management); group command list shows member-only commands; add sub-panels: join verification, welcome, points center, invite links, group stats, lottery, keyword filter, auto-reply, rules, level rules, moderation, summary, target switching
 - **2026-06-20** v2.0.1 — Fix mute bare-number duration parsing, UseIndependentChatPermissions group-type compatibility, requireTelegramManager returning non-nil error, audit_logs missing columns, keyword_filter message deletion; add migration 000025 for supergroup ID fix
 - **2026-06-18** v2.0.0 — Refactor to pure-bot architecture: remove web admin panel, merge bot+worker into single binary, Redis is now optional
 - **2026-06-18** v1.0.4 — Fix 10 frontend bugs (points config submit hang, cron step syntax, keyword filter change event, ban page empty state & loading, lottery race condition, sidebar state persistence, etc.); add four features: chat unbind, mute/unmute form, custom date range in stats, bot global config form
