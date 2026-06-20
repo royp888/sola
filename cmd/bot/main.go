@@ -165,60 +165,38 @@ func sanitizeTokenError(err error, token string) error {
 }
 
 func registerBotCommands(ctx context.Context, tgBot *gotgbot.Bot) error {
-	groupMemberCommands := []gotgbot.BotCommand{
-		{Command: "start", Description: "打开群组控制面板"},
-		{Command: "help", Description: "查看命令说明"},
-		{Command: "points", Description: "查看我的积分"},
-		{Command: "rank", Description: "查看积分榜单"},
+	// 群内只暴露成员可用命令，管理操作统一通过私聊机器人面板完成
+	groupCommands := []gotgbot.BotCommand{
+		{Command: "start", Description: "开始菜单"},
+		{Command: "help", Description: "帮助"},
+		{Command: "html", Description: "HTML 格式说明"},
 		{Command: "sign", Description: "每日签到"},
-		{Command: "lottery", Description: "查看进行中的抽奖"},
-		{Command: "info", Description: "查看当前会话信息"},
-	}
-	groupAdminCommands := append(append([]gotgbot.BotCommand{}, groupMemberCommands...), []gotgbot.BotCommand{
-		{Command: "ban", Description: "封禁成员（回复消息或接用户ID）"},
-		{Command: "unban", Description: "解封 /unban 用户ID"},
-		{Command: "mute", Description: "禁言 /mute 30m"},
-		{Command: "unmute", Description: "解除禁言"},
-		{Command: "kick", Description: "踢出成员"},
-		{Command: "warn", Description: "警告成员"},
-		{Command: "manage", Description: "打开成员管理面板"},
-		{Command: "purge", Description: "批量删消息 /purge 或回复+/purge"},
-		{Command: "del", Description: "删除回复的消息"},
-		{Command: "promote", Description: "提升为管理员"},
-		{Command: "demote", Description: "撤销管理员权限"},
-		{Command: "set_title", Description: "设置管理员头衔"},
-		{Command: "report", Description: "举报消息通知管理员"},
-		{Command: "ban_ghosts", Description: "清理注销账号"},
-		{Command: "setrules", Description: "设置群规"},
-		{Command: "clearrules", Description: "清除群规"},
+		{Command: "points", Description: "查看积分"},
+		{Command: "rank", Description: "积分排行榜"},
+		{Command: "stat", Description: "今日活跃统计"},
+		{Command: "stat_week", Description: "周活跃统计"},
+		{Command: "stats", Description: "自定义查询活跃统计"},
+		{Command: "lottery", Description: "群组中正在进行的抽奖"},
 		{Command: "rules", Description: "查看群规"},
-		{Command: "publish", Description: "立即发布内容"},
-		{Command: "posts", Description: "查看定时任务"},
-		{Command: "adminconfig", Description: "查看群组配置"},
-		{Command: "verify_toggle", Description: "开关入群验证"},
-		{Command: "keywords", Description: "查看关键词规则"},
-		{Command: "invites", Description: "管理邀请链接"},
-		{Command: "bans", Description: "查看封禁记录"},
-	}...)
-	privateCommands := []gotgbot.BotCommand{
-		{Command: "start", Description: "打开运营工作台"},
-		{Command: "help", Description: "查看私聊功能说明"},
-		{Command: "bind", Description: "绑定群组或频道"},
-		{Command: "publish", Description: "快捷发布"},
-		{Command: "posts", Description: "查看定时任务"},
 		{Command: "info", Description: "查看会话信息"},
+	}
+	privateCommands := []gotgbot.BotCommand{
+		{Command: "start", Description: "打开管理工作台"},
+		{Command: "help", Description: "查看私聊功能说明"},
 		{Command: "html", Description: "HTML 格式参考"},
+		{Command: "info", Description: "查看会话信息"},
 		{Command: "cancel", Description: "取消当前操作"},
 	}
 
 	var errs []error
-	if _, err := tgBot.SetMyCommandsWithContext(ctx, groupMemberCommands, &gotgbot.SetMyCommandsOpts{Scope: gotgbot.BotCommandScopeAllGroupChats{}}); err != nil {
+	// 成员和管理员在群内看到的命令相同（管理操作通过私聊面板）
+	if _, err := tgBot.SetMyCommandsWithContext(ctx, groupCommands, &gotgbot.SetMyCommandsOpts{Scope: gotgbot.BotCommandScopeAllGroupChats{}}); err != nil {
+		errs = append(errs, err)
+	}
+	if _, err := tgBot.SetMyCommandsWithContext(ctx, groupCommands, &gotgbot.SetMyCommandsOpts{Scope: gotgbot.BotCommandScopeAllChatAdministrators{}}); err != nil {
 		errs = append(errs, err)
 	}
 	if _, err := tgBot.SetMyCommandsWithContext(ctx, privateCommands, &gotgbot.SetMyCommandsOpts{Scope: gotgbot.BotCommandScopeAllPrivateChats{}}); err != nil {
-		errs = append(errs, err)
-	}
-	if _, err := tgBot.SetMyCommandsWithContext(ctx, groupAdminCommands, &gotgbot.SetMyCommandsOpts{Scope: gotgbot.BotCommandScopeAllChatAdministrators{}}); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)

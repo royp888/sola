@@ -22,6 +22,22 @@ func (a *App) routePrivateCallback(b *gotgbot.Bot, ctx *ext.Context, payload Cal
 		"lottery_keyword_create": true,
 		"lottery_both_create":    true,
 		"lottery_active":         true,
+		"verify":                 true,
+		"verify_toggle":          true,
+		"verify_set_type":        true,
+		"welcome":                true,
+		"welcome_edit":           true,
+		"keywords":               true,
+		"autoreplies":            true,
+		"rules":                  true,
+		"rules_edit":             true,
+		"levels":                 true,
+		"invites":                true,
+		"stats":                  true,
+		"moderation":             true,
+		"bans":                   true,
+		"violations":             true,
+		"check_bot_perm":         true,
 	}
 	var selectedChat *ChatBinding
 	if needsChat[payload.Action] {
@@ -57,7 +73,7 @@ func (a *App) routePrivateCallback(b *gotgbot.Bot, ctx *ext.Context, payload Cal
 	case "points":
 		return a.showPointsMenuForChat(b, ctx, selectedChat.ChatID, privateConsoleMarkup(*selectedChat))
 	case "admin":
-		return a.showPrivateAdminCenter(b, ctx, *selectedChat)
+		return a.showPrivateModerationPanel(b, ctx, *selectedChat)
 	case "summary":
 		return a.showPrivateSummary(b, ctx, *selectedChat)
 	case "lottery_create":
@@ -79,6 +95,39 @@ func (a *App) routePrivateCallback(b *gotgbot.Bot, ctx *ext.Context, payload Cal
 		return a.startCreateLotteryWizardWithJoinType(b, ctx, selectedChat.ChatID, joinType)
 	case "lottery_active":
 		return a.showPrivateLotteryCenter(b, ctx, *selectedChat)
+	// ── 新增子面板 ──
+	case "verify":
+		return a.showPrivateVerifyPanel(b, ctx, *selectedChat)
+	case "verify_toggle":
+		return a.toggleVerifyFromPrivate(b, ctx, *selectedChat)
+	case "verify_set_type":
+		return a.setVerifyTypeFromPrivate(b, ctx, *selectedChat, payload.Resource)
+	case "welcome":
+		return a.showPrivateWelcomePanel(b, ctx, *selectedChat)
+	case "welcome_edit":
+		return a.startSetWelcomeWizard(b, ctx, *selectedChat)
+	case "keywords":
+		return a.showPrivateKeywordsPanel(b, ctx, *selectedChat)
+	case "autoreplies":
+		return a.showPrivateAutoreplyPanel(b, ctx, *selectedChat)
+	case "rules":
+		return a.showPrivateRulesPanel(b, ctx, *selectedChat)
+	case "rules_edit":
+		return a.startSetRulesWizard(b, ctx, *selectedChat)
+	case "levels":
+		return a.showPrivateLevelsPanel(b, ctx, *selectedChat)
+	case "invites":
+		return a.showPrivateInvitePanel(b, ctx, *selectedChat)
+	case "stats":
+		return a.showPrivateGroupStatsPanel(b, ctx, *selectedChat)
+	case "moderation":
+		return a.showPrivateModerationPanel(b, ctx, *selectedChat)
+	case "bans":
+		return a.showPrivateBansPanel(b, ctx, *selectedChat)
+	case "violations":
+		return a.showPrivateViolationsPanel(b, ctx, *selectedChat)
+	case "check_bot_perm":
+		return a.showPrivateCheckBotPermPanel(b, ctx, *selectedChat)
 	default:
 		return answerCallback(b, ctx, "未知操作")
 	}
@@ -145,14 +194,10 @@ func (a *App) showPrivateConsole(b *gotgbot.Bot, ctx *ext.Context) error {
 		return a.showPrivateChatList(b, ctx)
 	}
 	text := strings.Join([]string{
-		"🎛 私聊工作台",
-		"━━━━━━━━━━",
-		fmt.Sprintf("当前目标：%s", chatTitle(chat)),
-		fmt.Sprintf("类型：%s", chatTypeLabel(chat.ChatType)),
-		fmt.Sprintf("Chat ID：%d", chat.ChatID),
+		fmt.Sprintf("⚙️ %s", chatTitle(chat)),
+		fmt.Sprintf("%s · %d", chatTypeLabel(chat.ChatType), chat.ChatID),
 		"",
-		"这里负责管理动作：创建抽奖、看积分、管定时任务、进群管中心。",
-		"群里负责成员交互：参与抽奖、发送口令、查看活动结果。",
+		"点击下方按钮管理群组配置。",
 	}, "\n")
 	return respondText(b, ctx, text, privateConsoleMarkup(chat))
 }
@@ -226,24 +271,38 @@ func privateHomeMarkup(hasChats bool, hasSelection bool) *gotgbot.SendMessageOpt
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: rows}}
 }
 
-func privateConsoleMarkup(chat ChatBinding) *gotgbot.SendMessageOpts {
-	chatResource := strconv.FormatInt(chat.ChatID, 10)
+func privateConsoleMarkup(_ ChatBinding) *gotgbot.SendMessageOpts {
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
 		{
-			{Text: "🎁 抽奖中心", CallbackData: CallbackData("private", "lottery_active", chatResource)},
-			{Text: "🎲 创建抽奖", CallbackData: CallbackData("private", "lottery_create", chatResource)},
+			{Text: "✅ 进群验证", CallbackData: CallbackData("private", "verify")},
+			{Text: "👋 进群欢迎", CallbackData: CallbackData("private", "welcome")},
 		},
 		{
-			{Text: "💎 积分中心", CallbackData: CallbackData("private", "points", chatResource)},
-			{Text: "📣 定时发帖", CallbackData: CallbackData("private", "posts", chatResource)},
+			{Text: "💎 积分中心", CallbackData: CallbackData("private", "points")},
+			{Text: "🔗 邀请链接", CallbackData: CallbackData("private", "invites")},
 		},
 		{
-			{Text: "🛡 群管中心", CallbackData: CallbackData("private", "admin", chatResource)},
-			{Text: "📊 运行概览", CallbackData: CallbackData("private", "summary", chatResource)},
+			{Text: "📊 群组统计", CallbackData: CallbackData("private", "stats")},
+			{Text: "🎁 抽奖中心", CallbackData: CallbackData("private", "lottery_active")},
+		},
+		{
+			{Text: "🎲 创建抽奖", CallbackData: CallbackData("private", "lottery_create")},
+			{Text: "📣 定时发帖", CallbackData: CallbackData("private", "posts")},
+		},
+		{
+			{Text: "🚫 关键词过滤", CallbackData: CallbackData("private", "keywords")},
+			{Text: "🤖 自动回复", CallbackData: CallbackData("private", "autoreplies")},
+		},
+		{
+			{Text: "📋 群规", CallbackData: CallbackData("private", "rules")},
+			{Text: "🏅 等级规则", CallbackData: CallbackData("private", "levels")},
+		},
+		{
+			{Text: "🛡 群管", CallbackData: CallbackData("private", "moderation")},
+			{Text: "📈 运行概览", CallbackData: CallbackData("private", "summary")},
 		},
 		{
 			{Text: "🔄 切换目标", CallbackData: CallbackData("private", "list")},
-			{Text: "🔙 返回首页", CallbackData: CallbackData("private", "home")},
 		},
 	}}}
 }
@@ -328,23 +387,6 @@ func privateLotteryMarkup(chat ChatBinding, items []Lottery) *gotgbot.SendMessag
 	}
 	rows = append(rows, []gotgbot.InlineKeyboardButton{{Text: "🔙 返回工作台", CallbackData: CallbackData("private", "console")}})
 	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: rows}}
-}
-func (a *App) showPrivateAdminCenter(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
-	scope := requestScope(ctx)
-	lines := []string{
-		"🛡 群管中心",
-		"",
-		fmt.Sprintf("目标：%s", chatTitle(chat)),
-		"群组里可直接使用：/ban /mute /kick /warn /unwarn /warns",
-		"入群验证、欢迎语、警告上限请在后台或群内命令里配置。",
-	}
-	if a.services.TelegramAccess != nil {
-		status, err := a.services.TelegramAccess.CheckBotAdmin(scope.Context, b, chat.ChatID)
-		if err == nil {
-			lines = append(lines, "", fmt.Sprintf("Bot 管理状态：%s", status.Status))
-		}
-	}
-	return respondText(b, ctx, strings.Join(lines, "\n"), privateConsoleMarkup(chat))
 }
 
 func (a *App) showPointsMenuForChat(b *gotgbot.Bot, ctx *ext.Context, chatID int64, back *gotgbot.SendMessageOpts) error {

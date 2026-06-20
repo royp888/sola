@@ -178,6 +178,10 @@ func (a *App) handleConversationMessage(b *gotgbot.Bot, ctx *ext.Context) (bool,
 		return true, a.handleLotteryWizardStep(b, ctx, state)
 	case "create_post":
 		return true, a.handlePostWizardStep(b, ctx, state)
+	case "set_welcome":
+		return true, a.handleSetWelcomeStep(b, ctx, state)
+	case "set_rules":
+		return true, a.handleSetRulesStep(b, ctx, state)
 	default:
 		a.clearConversation(scope.Context, scope.Actor.ID)
 		return true, sendText(b, ctx, "当前操作已失效，请重新开始。", nil)
