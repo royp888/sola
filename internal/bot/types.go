@@ -177,6 +177,7 @@ type CommonListQuery struct {
 type RedisStateService interface {
 	Get(ctx context.Context, key string) *redis.StringCmd
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
+	SetNX(ctx context.Context, key string, value any, expiration time.Duration) *redis.BoolCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 }
 
@@ -444,11 +445,19 @@ type LevelService interface {
 	DeleteLevelRule(ctx context.Context, chatID int64, level int) (string, error)
 }
 
+type ChatModerationConfigPatch struct {
+	AiFilterEnabled      *bool
+	BlockLinks           *bool
+	BlockForwards        *bool
+	KeywordFilterEnabled *bool
+}
+
 type KeywordFilterService interface {
 	ListKeywords(ctx context.Context, chatID int64) (string, error)
 	AddKeyword(ctx context.Context, chatID int64, keyword string, operatorID int64) (string, error)
 	DeleteKeyword(ctx context.Context, chatID int64, keyword string, operatorID int64) (string, error)
 	GetModerationConfig(ctx context.Context, chatID int64) (ChatModerationConfig, error)
+	UpdateModerationConfig(ctx context.Context, chatID int64, patch ChatModerationConfigPatch) (ChatModerationConfig, error)
 	MatchKeyword(ctx context.Context, chatID int64, text string) (KeywordFilterMatch, error)
 	RecordKeywordViolation(ctx context.Context, violation KeywordViolation) error
 }

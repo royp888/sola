@@ -71,6 +71,7 @@ func (a *App) handlePostWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *Conv
 			return sendText(b, ctx, err.Error(), postScheduleValueMarkup(stringVal(state.Data, "mode"), stringVal(state.Data, "schedule_kind")))
 		}
 		state.Step = postWizardStepContent
+		a.deleteWizardUserMsg(b, ctx)
 		return a.saveWizardAndSend(b, ctx, state, postWizardTitle(state)+"\n\n请输入要发送的内容，支持 HTML：", cancelMarkup())
 	case postWizardStepContent:
 		if input == "" {
@@ -78,6 +79,7 @@ func (a *App) handlePostWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *Conv
 		}
 		state.Data["content"] = input
 		state.Step = postWizardStepDelete
+		a.deleteWizardUserMsg(b, ctx)
 		return a.saveWizardAndSend(b, ctx, state, postWizardTitle(state)+"\n\n自动删除秒数？输入 0 表示不自动删除。", postAutoDeleteMarkup())
 	case postWizardStepDelete:
 		seconds, err := parseWizardNonNegativeInt(input)
@@ -85,6 +87,7 @@ func (a *App) handlePostWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *Conv
 			return sendText(b, ctx, "请输入非负整数秒数：", postAutoDeleteMarkup())
 		}
 		state.Data["auto_delete_seconds"] = seconds
+		a.deleteWizardUserMsg(b, ctx)
 		return a.confirmPostWizard(b, ctx, state)
 	case postWizardStepConfirm:
 		return sendText(b, ctx, "请点击确认创建或取消。", confirmPostMarkup())

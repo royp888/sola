@@ -170,6 +170,19 @@ func (s *ModerationService) UpdateConfig(ctx context.Context, chatID int64, patc
 	return cfg, nil
 }
 
+func (s *ModerationService) UpdateModerationConfig(ctx context.Context, chatID int64, patch bot.ChatModerationConfigPatch) (bot.ChatModerationConfig, error) {
+	servicePatch := ModerationConfigPatch{
+		AiFilterEnabled:      patch.AiFilterEnabled,
+		BlockLinks:           patch.BlockLinks,
+		BlockForwards:        patch.BlockForwards,
+		KeywordFilterEnabled: patch.KeywordFilterEnabled,
+	}
+	if _, err := s.UpdateConfig(ctx, chatID, servicePatch); err != nil {
+		return bot.ChatModerationConfig{}, err
+	}
+	return s.GetModerationConfig(ctx, chatID)
+}
+
 func (s *ModerationService) ListKeywords(ctx context.Context, chatID int64) (string, error) {
 	if s == nil || s.store == nil || s.store.DB == nil {
 		return "当前未配置过滤关键词。", nil
@@ -726,6 +739,9 @@ func applyModerationConfigPatch(cfg *model.ChatModerationConfig, patch Moderatio
 	}
 	if patch.SpamScoreThreshold != nil {
 		cfg.SpamScoreThreshold = nonNegative(*patch.SpamScoreThreshold)
+	}
+	if patch.AiFilterEnabled != nil {
+		cfg.AiFilterEnabled = *patch.AiFilterEnabled
 	}
 	if patch.RestrictUnverified != nil {
 		cfg.RestrictUnverified = *patch.RestrictUnverified

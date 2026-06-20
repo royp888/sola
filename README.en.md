@@ -16,7 +16,7 @@ Sola is an open-source Telegram group operations bot built as a **single Bot pro
 | **Points** | Score by message type, cooldown anti-spam, leaderboard, history, manual adjustment, daily sign-in |
 | **Moderation** | Ban/unban/mute/kick/warn, bulk delete messages, welcome messages, promote/demote admins, titles, ghost cleanup |
 | **Join Verification** | 6 verification types (button / captcha / multi-choice / Poll / math / Cloudflare Turnstile Mini App) |
-| **Risk Control** | Keyword filtering, link restrictions, unverified-user limits, AI spam detection (OpenAI-compatible), violation records |
+| **Risk Control** | Keyword filtering, link restrictions, unverified-user limits, AI spam detection (OpenAI-compatible), violation records; private-chat panel to toggle AI detection / link blocking / forward blocking individually |
 | **Content Ops** | Auto-replies, message templates, invite link tracking, level system, sed inline text correction |
 | **Scheduled Posts** | One-time and recurring tasks, rich media (image/video/file), Inline Keyboard, auto-delete |
 | **Lottery** | Button and keyword participation, group announcements, scheduler-driven auto-draw |
@@ -78,10 +78,18 @@ cp .env.example .env
 
 | Variable | Description |
 |----------|-------------|
-| `SOLA_BOT_MINI_APP_URL` | Mini App URL used to generate verification links |
-| `SOLA_TURNSTILE_SITE_KEY` | From Cloudflare Dashboard → Turnstile |
-| `SOLA_TURNSTILE_SECRET_KEY` | From Cloudflare Dashboard → Turnstile |
+| `SOLA_BOT_MINI_APP_URL` | Mini App base URL (e.g. `https://your-domain.com`) used to generate verification links |
+| `SOLA_TURNSTILE_SITE_KEY` | From Cloudflare Dashboard → Turnstile → Site Key |
+| `SOLA_TURNSTILE_SECRET_KEY` | From Cloudflare Dashboard → Turnstile → Secret Key |
 | `SOLA_TURNSTILE_VERIFY_SECRET` | HMAC signing key for join-request links — `openssl rand -base64 32` |
+
+> **Cloudflare Turnstile setup**:
+> 1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Turnstile** in the sidebar
+> 2. Click **Add Site** — enter a name and the domain where the Bot's Mini App is served
+> 3. Choose **Managed** widget type (auto-decides whether to show a challenge)
+> 4. Copy the **Site Key** and **Secret Key** into the environment variables above
+> 5. Ensure `SOLA_BOT_MINI_APP_URL` matches the domain registered in Turnstile
+> 6. Enable **Join Request Approval** in the Telegram group settings
 
 ### 2. Start all services
 
@@ -158,6 +166,7 @@ Without Compose, run the SQL files manually in order. When upgrading, only apply
 
 ## Changelog
 
+- **2026-06-21** v2.2.0 — Fix duplicate welcome message when Turnstile join is approved (Redis SetNX dedup); add AI anti-spam panel in private workspace (new 🤖 AI反垃圾 button with toggles for AI detection / link blocking / forward blocking); built-in Turnstile Mini App web server (no separate deployment needed, just point a domain at the bot)
 - **2026-06-20** v2.1.0 — Redesign private chat as 16-button panel (no commands for group management); group command list shows member-only commands; add sub-panels: join verification, welcome, points center, invite links, group stats, lottery, keyword filter, auto-reply, rules, level rules, moderation, summary, target switching
 - **2026-06-20** v2.0.1 — Fix mute bare-number duration parsing, UseIndependentChatPermissions group-type compatibility, requireTelegramManager returning non-nil error, audit_logs missing columns, keyword_filter message deletion; add migration 000025 for supergroup ID fix
 - **2026-06-18** v2.0.0 — Refactor to pure-bot architecture: remove web admin panel, merge bot+worker into single binary, Redis is now optional

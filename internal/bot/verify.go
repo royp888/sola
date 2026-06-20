@@ -28,6 +28,13 @@ func (a *App) registerVerifyHandlers(d *ext.Dispatcher) {
 	d.AddHandler(handlers.NewCommand("allowuser", a.wrap(a.handleAllowUser, a.RequirePermission(PermissionVerify), a.RateLimit("cmd:allowuser", 1))))
 	d.AddHandler(handlers.NewCommand("delallowuser", a.wrap(a.handleDelAllowUser, a.RequirePermission(PermissionVerify), a.RateLimit("cmd:delallowuser", 1))))
 	d.AddHandler(handlers.NewMessage(message.NewChatMembers, a.handleNewChatMembers))
+	// ChatMemberUpdated fires in supergroups when members join via invite link
+	d.AddHandler(handlers.NewChatMember(func(cm *gotgbot.ChatMemberUpdated) bool {
+		old := cm.OldChatMember.GetStatus()
+		nw := cm.NewChatMember.GetStatus()
+		return (old == "left" || old == "kicked" || old == "") &&
+			(nw == "member" || nw == "restricted")
+	}, a.handleChatMemberUpdatedJoin))
 	d.AddHandler(handlers.NewChatJoinRequest(filters.ChatJoinRequest(func(_ *gotgbot.ChatJoinRequest) bool { return true }), a.handleChatJoinRequest))
 	d.AddHandler(handlers.NewPollAnswer(pollanswer.All, a.handlePollAnswer))
 }
@@ -193,6 +200,10 @@ func (a *App) handleNewChatMembers(b *gotgbot.Bot, ctx *ext.Context) error {
 			if err := a.sendMathChallenge(b, ctx, cfg, member); err != nil {
 				return err
 			}
+		case "captcha":
+			if err := a.sendCaptchaChallenge(b, ctx, cfg, member); err != nil {
+				return err
+			}
 		case "button":
 			if err := a.sendButtonChallenge(b, ctx, cfg, member); err != nil {
 				return err
@@ -204,6 +215,59 @@ func (a *App) handleNewChatMembers(b *gotgbot.Bot, ctx *ext.Context) error {
 		}
 	}
 	return nil
+}
+
+// handleChatMemberUpdatedJoin handles ChatMemberUpdated events for supergroups where
+// join events arrive as chat_member updates instead of new_chat_members messages.
+func (a *App) handleChatMemberUpdatedJoin(b *gotgbot.Bot, ctx *ext.Context) error {
+	if ctx.ChatMember == nil || a.services.Admin == nil {
+		return nil
+	}
+	cm := ctx.ChatMember
+	if cm.Chat.Type != "group" && cm.Chat.Type != "supergroup" {
+		return nil
+	}
+	scope := requestScope(ctx)
+	cfg, err := a.services.Admin.GetConfig(scope.Context, cm.Chat.Id)
+	if err != nil {
+		return err
+	}
+	member := cm.NewChatMember.GetUser()
+	if member.IsBot {
+		return nil
+	}
+	_ = a.services.Admin.RecordSeenUser(scope.Context, cm.Chat.Id, member.Id)
+	switch cm.NewChatMember.(type) {
+	case gotgbot.ChatMemberOwner, gotgbot.ChatMemberAdministrator:
+		_ = a.sendWelcomeMessage(b, ctx, cfg, member)
+		return nil
+	}
+	if isInWhitelist(cfg.VerifyWhitelist, member.Id) {
+		return a.sendWelcomeMessage(b, ctx, cfg, member)
+	}
+	if !cfg.VerifyEnabled {
+		return nil
+	}
+	_ = a.restrictForVerification(b, scope, member.Id)
+	if a.services.Redis != nil {
+		ttl := time.Duration(cfg.VerifyTimeout) * time.Second
+		if ttl <= 0 {
+			ttl = time.Minute
+		}
+		_ = a.services.Redis.Set(scope.Context, fmt.Sprintf("unverified:%d:%d", cm.Chat.Id, member.Id), "1", ttl).Err()
+	}
+	switch cfg.VerifyType {
+	case "multi_choice":
+		return a.sendMultiChoiceChallenge(b, ctx, cfg, member)
+	case "poll":
+		return a.sendPollChallenge(b, ctx, cfg, member)
+	case "math":
+		return a.sendMathChallenge(b, ctx, cfg, member)
+	case "captcha":
+		return a.sendCaptchaChallenge(b, ctx, cfg, member)
+	default:
+		return a.sendButtonChallenge(b, ctx, cfg, member)
+	}
 }
 
 func (a *App) showVerifyMenu(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -356,6 +420,15 @@ func (a *App) restrictForVerification(b *gotgbot.Bot, scope RequestScope, userID
 }
 
 func (a *App) sendButtonChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg ChatAdminConfig, user gotgbot.User) error {
+	// Dedup guard: new_chat_members and chat_member_updated can both fire for the
+	// same join event in supergroups. Only the first caller proceeds.
+	if a.services.Redis != nil {
+		key := fmt.Sprintf("welcome_sent:%d:%d", cfg.ChatID, user.Id)
+		set, _ := a.services.Redis.SetNX(context.Background(), key, "1", 15*time.Second).Result()
+		if !set {
+			return nil
+		}
+	}
 	timeout := time.Duration(cfg.VerifyTimeout) * time.Second
 	if timeout <= 0 {
 		timeout = time.Minute
@@ -392,6 +465,81 @@ func (a *App) sendButtonChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg ChatAdmi
 	return nil
 }
 
+func (a *App) sendCaptchaChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg ChatAdminConfig, user gotgbot.User) error {
+	timeout := time.Duration(cfg.VerifyTimeout) * time.Second
+	if timeout <= 0 {
+		timeout = time.Minute
+	}
+	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if name == "" {
+		name = strconv.FormatInt(user.Id, 10)
+	}
+
+	// Generate a random 4-digit code and 3 decoy codes
+	correctCode := 1000 + rand.Intn(9000)
+	decoys := buildCaptchaDecoys(correctCode, 3)
+	allCodes := append([]int{correctCode}, decoys...)
+	rand.Shuffle(len(allCodes), func(i, j int) { allCodes[i], allCodes[j] = allCodes[j], allCodes[i] })
+
+	correctAnswer := strconv.Itoa(correctCode)
+	buttons := make([]gotgbot.InlineKeyboardButton, 0, len(allCodes))
+	for _, code := range allCodes {
+		buttons = append(buttons, gotgbot.InlineKeyboardButton{
+			Text:         strconv.Itoa(code),
+			CallbackData: CallbackData("verify", "check", strconv.FormatInt(cfg.ChatID, 10), strconv.FormatInt(user.Id, 10), strconv.Itoa(code)),
+		})
+	}
+
+	text := fmt.Sprintf("👋 欢迎 %s！\n请在 %d 秒内点击正确的验证码：\n\n🔢 验证码：<b>%s</b>", name, int(timeout.Seconds()), correctAnswer)
+	sent, err := b.SendMessageWithContext(requestScope(ctx).Context, cfg.ChatID, text, &gotgbot.SendMessageOpts{
+		ParseMode:   "HTML",
+		ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: [][]gotgbot.InlineKeyboardButton{buttons}},
+	})
+	if err != nil {
+		return err
+	}
+	messageID := int64(0)
+	if sent != nil {
+		messageID = sent.MessageId
+	}
+	if err := a.services.Admin.SetVerifyChallenge(requestScope(ctx).Context, cfg.ChatID, user.Id, VerifyChallenge{
+		Answer:     correctAnswer,
+		MessageID:  messageID,
+		Attempts:   3,
+		ExpireAt:   time.Now().Add(timeout),
+		MemberName: name,
+	}, timeout); err != nil {
+		return err
+	}
+	a.scheduleVerifyTimeoutKick(b, cfg.ChatID, user.Id, timeout)
+	return nil
+}
+
+func buildCaptchaDecoys(correct, count int) []int {
+	decoys := make([]int, 0, count)
+	for len(decoys) < count {
+		offset := rand.Intn(50) + 1
+		candidate := correct + offset
+		if rand.Intn(2) == 0 {
+			candidate = correct - offset
+		}
+		if candidate < 1000 || candidate > 9999 {
+			candidate = correct + (rand.Intn(50) + 1)
+		}
+		dupe := candidate == correct
+		for _, d := range decoys {
+			if d == candidate {
+				dupe = true
+				break
+			}
+		}
+		if !dupe {
+			decoys = append(decoys, candidate)
+		}
+	}
+	return decoys
+}
+
 func (a *App) sendMultiChoiceChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg ChatAdminConfig, user gotgbot.User) error {
 	timeout := time.Duration(cfg.VerifyTimeout) * time.Second
 	if timeout <= 0 {
@@ -421,7 +569,11 @@ func (a *App) sendMultiChoiceChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg Cha
 
 	var options []string
 	if err := json.Unmarshal([]byte(cfg.VerifyOptions), &options); err != nil || len(options) == 0 {
-		return fmt.Errorf("验证选项未配置或格式无效")
+		// Fall back to default yes/no options so new members don't get stuck muted
+		options = []string{"✅ 是，我已阅读并同意遵守群规", "❌ 否"}
+		if cfg.VerifyCorrectIndex < 0 || cfg.VerifyCorrectIndex >= len(options) {
+			cfg.VerifyCorrectIndex = 0
+		}
 	}
 
 	// For easy difficulty, only use first 2 options
@@ -495,7 +647,7 @@ func (a *App) sendPollChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg ChatAdminC
 
 	var options []string
 	if err := json.Unmarshal([]byte(cfg.VerifyOptions), &options); err != nil || len(options) < 2 {
-		return fmt.Errorf("投票验证至少需要2个选项")
+		options = []string{"✅ 我已阅读并同意遵守群规", "❌ 我不同意"}
 	}
 
 	// Determine correct answer index
@@ -540,6 +692,12 @@ func (a *App) sendPollChallenge(b *gotgbot.Bot, ctx *ext.Context, cfg ChatAdminC
 		PollID:     pollID,
 	}, timeout); err != nil {
 		return err
+	}
+	// Store pollID → "chatID:userID" so handlePollAnswer can look up both without EffectiveChat
+	if pollID != "" && a.services.Redis != nil {
+		key := fmt.Sprintf("pollchat:%s", pollID)
+		val := fmt.Sprintf("%d:%d", cfg.ChatID, user.Id)
+		_ = a.services.Redis.Set(requestScope(ctx).Context, key, val, timeout+5*time.Minute).Err()
 	}
 	a.scheduleVerifyTimeoutKick(b, cfg.ChatID, user.Id, timeout)
 	return nil
@@ -647,39 +805,37 @@ func (a *App) handlePollAnswer(b *gotgbot.Bot, ctx *ext.Context) error {
 	if ctx == nil || ctx.PollAnswer == nil || a.services.Admin == nil {
 		return nil
 	}
-	if ctx.EffectiveChat == nil || ctx.EffectiveUser == nil {
-		return nil
-	}
-	chatID := ctx.EffectiveChat.Id
-	userID := ctx.EffectiveUser.Id
-	if chatID == 0 || userID == 0 {
+	pollID := ctx.PollAnswer.PollId
+	if pollID == "" {
 		return nil
 	}
 
-	// Only handle group/supergroup polls
-	if ctx.EffectiveChat.Type != "group" && ctx.EffectiveChat.Type != "supergroup" {
+	// PollAnswer updates carry no chat context in Telegram API.
+	// Look up chatID and userID from the Redis key stored when the poll was sent.
+	bgCtx := context.Background()
+	chatID, userID, ok := a.pollChatLookup(bgCtx, pollID)
+	if !ok {
 		return nil
 	}
 
 	// Get the challenge for this user
-	challenge, ok, err := a.services.Admin.GetVerifyChallenge(requestScope(ctx).Context, chatID, userID)
-	if err != nil || !ok {
+	challenge, found, err := a.services.Admin.GetVerifyChallenge(bgCtx, chatID, userID)
+	if err != nil || !found {
 		return nil
 	}
 
-	// Only process poll answers that match a stored poll challenge
-	if challenge.PollID == "" || ctx.PollAnswer.PollId != challenge.PollID {
+	// Confirm this poll answer belongs to the stored challenge
+	if challenge.PollID == "" || pollID != challenge.PollID {
 		return nil
 	}
 
-	// Get the selected option index
 	if len(ctx.PollAnswer.OptionIds) == 0 {
 		return nil
 	}
 	selectedOption := int(ctx.PollAnswer.OptionIds[0])
 
 	answer := strconv.Itoa(selectedOption)
-	result, err := a.services.Admin.CheckVerifyChallenge(requestScope(ctx).Context, chatID, userID, answer)
+	result, err := a.services.Admin.CheckVerifyChallenge(bgCtx, chatID, userID, answer)
 	if err != nil {
 		return err
 	}
@@ -689,26 +845,54 @@ func (a *App) handlePollAnswer(b *gotgbot.Bot, ctx *ext.Context) error {
 			_ = a.kickUnverifiedMember(b, chatID, userID)
 			_ = a.clearUnverifiedKey(chatID, userID)
 			if result.Challenge.MessageID != 0 {
-				_, _ = b.DeleteMessageWithContext(requestScope(ctx).Context, chatID, result.Challenge.MessageID, nil)
+				_, _ = b.DeleteMessageWithContext(bgCtx, chatID, result.Challenge.MessageID, nil)
 			}
-			_ = a.services.Admin.RecordVerifyEvent(requestScope(ctx).Context, chatID, userID, "verify_fail", "投票验证错误超过次数被踢出")
-			return nil
+			_ = a.services.Admin.RecordVerifyEvent(bgCtx, chatID, userID, "verify_fail", "投票验证错误超过次数被踢出")
 		}
-		// Wrong answer but still has attempts
 		return nil
 	}
 
-	// Correct answer - restore permissions (no-op on regular groups, only works on supergroups)
-	if _, err := b.RestrictChatMemberWithContext(requestScope(ctx).Context, chatID, userID, fullPermissions(), nil); err != nil {
+	// Correct answer - restore permissions
+	if _, err := b.RestrictChatMemberWithContext(bgCtx, chatID, userID, fullPermissions(), nil); err != nil {
 		if !isSuperGroupOnlyError(err) {
 			return err
 		}
 	}
 	_ = a.clearUnverifiedKey(chatID, userID)
-	_ = a.services.Admin.RecordVerifyEvent(requestScope(ctx).Context, chatID, userID, "verify_pass", "投票验证通过")
-	cfg, _ := a.services.Admin.GetConfig(requestScope(ctx).Context, chatID)
-	_ = a.postWelcomeMessage(b, ctx, chatID, cfg, *ctx.EffectiveUser)
+	_ = a.services.Admin.RecordVerifyEvent(bgCtx, chatID, userID, "verify_pass", "投票验证通过")
+	if result.Challenge.MessageID != 0 {
+		_, _ = b.DeleteMessageWithContext(bgCtx, chatID, result.Challenge.MessageID, nil)
+	}
+	cfg, _ := a.services.Admin.GetConfig(bgCtx, chatID)
+	var user gotgbot.User
+	if ctx.PollAnswer.User != nil {
+		user = *ctx.PollAnswer.User
+	} else {
+		user = gotgbot.User{Id: userID}
+	}
+	_ = a.postWelcomeMessage(b, ctx, chatID, cfg, user)
 	return nil
+}
+
+// pollChatLookup retrieves (chatID, userID) from the Redis key written in sendPollChallenge.
+func (a *App) pollChatLookup(ctx context.Context, pollID string) (chatID int64, userID int64, ok bool) {
+	if a.services.Redis == nil {
+		return 0, 0, false
+	}
+	raw, err := a.services.Redis.Get(ctx, fmt.Sprintf("pollchat:%s", pollID)).Result()
+	if err != nil {
+		return 0, 0, false
+	}
+	parts := strings.SplitN(raw, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	cid, err1 := strconv.ParseInt(parts[0], 10, 64)
+	uid, err2 := strconv.ParseInt(parts[1], 10, 64)
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return cid, uid, true
 }
 
 func (a *App) clearUnverifiedKey(chatID int64, userID int64) error {

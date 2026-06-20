@@ -75,6 +75,7 @@ func (a *App) handleLotteryWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *C
 			state.Data["max_participants"] = value
 			state.Data["end_at"] = ""
 			state.Step = lotteryWizardStepPrize
+			a.deleteWizardUserMsg(b, ctx)
 			return a.saveWizardAndSend(b, ctx, state, lotteryWizardTitle(state)+"\n\n请输入奖品名称：", cancelMarkup())
 		}
 		endAt, err := time.ParseInLocation("2006-01-02 15:04", input, chinaLocation())
@@ -84,6 +85,7 @@ func (a *App) handleLotteryWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *C
 		state.Data["end_at"] = endAt.Format(time.RFC3339)
 		state.Data["max_participants"] = 0
 		state.Step = lotteryWizardStepPrize
+		a.deleteWizardUserMsg(b, ctx)
 		return a.saveWizardAndSend(b, ctx, state, lotteryWizardTitle(state)+"\n\n请输入奖品名称：", cancelMarkup())
 	case lotteryWizardStepPrize:
 		if input == "" {
@@ -91,18 +93,21 @@ func (a *App) handleLotteryWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *C
 		}
 		state.Data["prize_name"] = input
 		state.Step = lotteryWizardStepQuantity
+		a.deleteWizardUserMsg(b, ctx)
 		return a.saveWizardAndSend(b, ctx, state, lotteryWizardTitle(state)+"\n\n请输入奖品数量：", quickIntMarkup([]int{1, 2, 3, 5}, "wizard", "lottery_prize_count"))
 	case lotteryWizardStepQuantity:
 		count, err := parseWizardPositiveInt(input)
 		if err != nil {
 			return sendText(b, ctx, "请输入正整数：", quickIntMarkup([]int{1, 2, 3, 5}, "wizard", "lottery_prize_count"))
 		}
+		a.deleteWizardUserMsg(b, ctx)
 		return a.applyLotteryPrizeCount(b, ctx, state, count, true)
 	case lotteryWizardStepTitle:
 		if input == "" {
 			return sendText(b, ctx, "活动名称不能为空，请重新输入：", cancelMarkup())
 		}
 		state.Data["title"] = input
+		a.deleteWizardUserMsg(b, ctx)
 		if lotteryNeedsKeyword(stringVal(state.Data, "join_type")) {
 			state.Step = lotteryWizardStepKeyword
 			return a.saveWizardAndSend(b, ctx, state, lotteryWizardTitle(state)+"\n\n请输入参与口令：", cancelMarkup())
@@ -114,6 +119,7 @@ func (a *App) handleLotteryWizardStep(b *gotgbot.Bot, ctx *ext.Context, state *C
 			return sendText(b, ctx, "口令不能为空，请重新输入：", cancelMarkup())
 		}
 		state.Data["join_keyword"] = input
+		a.deleteWizardUserMsg(b, ctx)
 		state.Step = lotteryWizardStepCost
 		return a.saveWizardAndSend(b, ctx, state, lotteryWizardTitle(state)+"\n\n请输入参与所需积分（0 = 免费）：", quickIntMarkup([]int{0, 10, 50, 100}, "wizard", "lottery_cost"))
 	case lotteryWizardStepCost:
@@ -500,4 +506,13 @@ func intVal(data map[string]any, key string) int {
 		}
 	}
 	return 0
+}
+
+// deleteWizardUserMsg deletes the user's text message during a wizard step to keep the chat clean.
+func (a *App) deleteWizardUserMsg(b *gotgbot.Bot, ctx *ext.Context) {
+	if ctx == nil || ctx.Message == nil {
+		return
+	}
+	scope := requestScope(ctx)
+	_, _ = b.DeleteMessageWithContext(scope.Context, ctx.Message.Chat.Id, ctx.Message.MessageId, nil)
 }

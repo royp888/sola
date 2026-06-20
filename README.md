@@ -16,7 +16,7 @@ Sola 是一套面向 Telegram 群组运营的开源 Bot，采用 **单 Bot 进�
 | **积分** | 按消息类型计分、冷却防刷、排行榜、流水查询、手动调分、签到 |
 | **群管** | 封禁/解封/禁言/踢出/警告、批量删消息、欢迎语、管理员提升/降级/头衔、清理注销账号 |
 | **入群验证** | 6 种验证类型（按钮/验证码/多选/Poll/数学题/Cloudflare Turnstile Mini App） |
-| **风控审核** | 关键词过滤、链接限制、未验证用户限制、AI 广告二次判定（OpenAI 兼容接口）、违规记录 |
+| **风控审核** | 关键词过滤、链接限制、未验证用户限制、AI 广告二次判定（OpenAI 兼容接口）、违规记录；私聊面板可单独开关 AI 识别/外链屏蔽/转发屏蔽 |
 | **内容运营** | 自动回复、消息模板、邀请链接追踪、等级成长体系、sed 行内文本修正 |
 | **定时发帖** | 一次性/循环任务、富媒体（图文/视频/文件）、Inline Keyboard、自动删除 |
 | **抽奖** | 按钮/口令参与、群内公告、后台调度器自动开奖（`poll_answer` 实时接收） |
@@ -78,10 +78,18 @@ cp .env.example .env
 
 | 变量 | 说明 |
 |------|------|
-| `SOLA_BOT_MINI_APP_URL` | Mini App 地址，用于生成验证链接 |
-| `SOLA_TURNSTILE_SITE_KEY` | Cloudflare Dashboard → Turnstile 获取 |
-| `SOLA_TURNSTILE_SECRET_KEY` | Cloudflare Dashboard → Turnstile 获取 |
+| `SOLA_BOT_MINI_APP_URL` | Mini App 地址（如 `https://your-domain.com`），用于生成验证链接 |
+| `SOLA_TURNSTILE_SITE_KEY` | Cloudflare Dashboard → Turnstile → 站点密钥（Site Key） |
+| `SOLA_TURNSTILE_SECRET_KEY` | Cloudflare Dashboard → Turnstile → 密钥（Secret Key） |
 | `SOLA_TURNSTILE_VERIFY_SECRET` | 链接签名密钥，随机 32 字节即可：`openssl rand -base64 32` |
+
+> **Cloudflare Turnstile 配置步骤**：
+> 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/) → 左侧选择 **Turnstile**
+> 2. 点击 **Add Site** → 填入站点名称，域名填入 Bot 的 Mini App 访问域名
+> 3. Widget 类型选 **Managed**（自动判断是否展示验证框）
+> 4. 创建后复制 **Site Key** 和 **Secret Key** 分别填入上方环境变量
+> 5. 确保 `SOLA_BOT_MINI_APP_URL` 与 Turnstile 中配置的域名一致
+> 6. 群组需在 Telegram 设置中开启「**加入前需批准**（Join Request）」
 
 ### 2. 启动全部服务
 
@@ -158,6 +166,7 @@ go run ./cmd/bot
 
 ## 更新日志
 
+- **2026-06-21** v2.2.0 — 修复 Turnstile 加入时欢迎消息重复发送（Redis SetNX 去重）；新增 AI反垃圾私聊面板（工作台新增「🤖 AI反垃圾」按钮，可单独开关 AI 识别/屏蔽外链/屏蔽转发）；Turnstile Mini App 内置 Web 服务（无需额外部署，配置域名后直接提供验证页）
 - **2026-06-20** v2.1.0 — 私聊面板全按钮化重构（@xiaoku 风格）：工作台扩展为 16 个按钮 2 列网格，支持在私聊中完成进群验证开关与类型切换、欢迎语修改、群规修改、关键词/自动回复查看、邀请链接、等级规则、群管状态与记录等所有配置；群内 BotFather 命令精简为成员命令，管理操作统一通过私聊面板
 - **2026-06-20** v2.0.1 — 修复 mute 命令裸数字时长解析、UseIndependentChatPermissions 兼容性、管理员权限校验返回非空错误、audit_logs 缺失列、keyword_filter 删消息逻辑；补充超群 ID 迁移 migration 000025
 - **2026-06-18** v2.0.0 — 重构为纯 Bot 架构：删除 Web 管理面板，合并 bot+worker 为单进程，Redis 变为可选

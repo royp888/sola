@@ -562,3 +562,102 @@ func privateBackModerationMarkup() *gotgbot.SendMessageOpts {
 		{{Text: "🏠 返回工作台", CallbackData: CallbackData("private", "console")}},
 	}}}
 }
+
+// ─── AI反垃圾 ─────────────────────────────────────────────────────────────────
+
+func (a *App) showPrivateSpamPanel(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
+	scope := requestScope(ctx)
+	if a.services.KeywordFilter == nil {
+		return respondText(b, ctx, "内容过滤服务尚未接入。", privateConsoleMarkup(chat))
+	}
+	cfg, err := a.services.KeywordFilter.GetModerationConfig(scope.Context, chat.ChatID)
+	if err != nil {
+		return respondText(b, ctx, "获取配置失败："+err.Error(), privateConsoleMarkup(chat))
+	}
+	text := strings.Join([]string{
+		"🤖 AI反垃圾",
+		"━━━━━━━━━━",
+		fmt.Sprintf("目标：%s", chatTitle(chat)),
+		fmt.Sprintf("AI垃圾识别：%s", boolLabel(cfg.AiFilterEnabled, "已开启 ✅", "已关闭 ❌")),
+		fmt.Sprintf("屏蔽外部链接：%s", boolLabel(cfg.BlockLinks, "已开启 ✅", "已关闭 ❌")),
+		fmt.Sprintf("屏蔽转发消息：%s", boolLabel(cfg.BlockForwards, "已开启 ✅", "已关闭 ❌")),
+		"",
+		"开启 AI垃圾识别 后，新消息会经过 AI 判断是否为广告/垃圾，命中则自动删除。",
+	}, "\n")
+	return respondText(b, ctx, text, privateSpamMarkup(chat, cfg))
+}
+
+func (a *App) toggleSpamAiFilter(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
+	scope := requestScope(ctx)
+	if a.services.KeywordFilter == nil {
+		return answerCallback(b, ctx, "内容过滤服务尚未接入")
+	}
+	cfg, err := a.services.KeywordFilter.GetModerationConfig(scope.Context, chat.ChatID)
+	if err != nil {
+		return answerCallback(b, ctx, "获取配置失败")
+	}
+	newVal := !cfg.AiFilterEnabled
+	if _, err := a.services.KeywordFilter.UpdateModerationConfig(scope.Context, chat.ChatID, ChatModerationConfigPatch{AiFilterEnabled: &newVal}); err != nil {
+		return respondText(b, ctx, "设置失败："+err.Error(), privateConsoleMarkup(chat))
+	}
+	_ = answerCallback(b, ctx, "AI垃圾识别 "+boolLabel(newVal, "已开启", "已关闭"))
+	return a.showPrivateSpamPanel(b, ctx, chat)
+}
+
+func (a *App) toggleSpamBlockLinks(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
+	scope := requestScope(ctx)
+	if a.services.KeywordFilter == nil {
+		return answerCallback(b, ctx, "内容过滤服务尚未接入")
+	}
+	cfg, err := a.services.KeywordFilter.GetModerationConfig(scope.Context, chat.ChatID)
+	if err != nil {
+		return answerCallback(b, ctx, "获取配置失败")
+	}
+	newVal := !cfg.BlockLinks
+	if _, err := a.services.KeywordFilter.UpdateModerationConfig(scope.Context, chat.ChatID, ChatModerationConfigPatch{BlockLinks: &newVal}); err != nil {
+		return respondText(b, ctx, "设置失败："+err.Error(), privateConsoleMarkup(chat))
+	}
+	_ = answerCallback(b, ctx, "屏蔽外部链接 "+boolLabel(newVal, "已开启", "已关闭"))
+	return a.showPrivateSpamPanel(b, ctx, chat)
+}
+
+func (a *App) toggleSpamBlockForwards(b *gotgbot.Bot, ctx *ext.Context, chat ChatBinding) error {
+	scope := requestScope(ctx)
+	if a.services.KeywordFilter == nil {
+		return answerCallback(b, ctx, "内容过滤服务尚未接入")
+	}
+	cfg, err := a.services.KeywordFilter.GetModerationConfig(scope.Context, chat.ChatID)
+	if err != nil {
+		return answerCallback(b, ctx, "获取配置失败")
+	}
+	newVal := !cfg.BlockForwards
+	if _, err := a.services.KeywordFilter.UpdateModerationConfig(scope.Context, chat.ChatID, ChatModerationConfigPatch{BlockForwards: &newVal}); err != nil {
+		return respondText(b, ctx, "设置失败："+err.Error(), privateConsoleMarkup(chat))
+	}
+	_ = answerCallback(b, ctx, "屏蔽转发消息 "+boolLabel(newVal, "已开启", "已关闭"))
+	return a.showPrivateSpamPanel(b, ctx, chat)
+}
+
+func privateSpamMarkup(chat ChatBinding, cfg ChatModerationConfig) *gotgbot.SendMessageOpts {
+	aiLabel := "开启 AI垃圾识别"
+	if cfg.AiFilterEnabled {
+		aiLabel = "关闭 AI垃圾识别"
+	}
+	linksLabel := "开启 屏蔽链接"
+	if cfg.BlockLinks {
+		linksLabel = "关闭 屏蔽链接"
+	}
+	fwdLabel := "开启 屏蔽转发"
+	if cfg.BlockForwards {
+		fwdLabel = "关闭 屏蔽转发"
+	}
+	_ = chat
+	return &gotgbot.SendMessageOpts{ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
+		{{Text: "🤖 " + aiLabel, CallbackData: CallbackData("private", "spam_toggle_ai")}},
+		{
+			{Text: "🔗 " + linksLabel, CallbackData: CallbackData("private", "spam_toggle_links")},
+			{Text: "📤 " + fwdLabel, CallbackData: CallbackData("private", "spam_toggle_forwards")},
+		},
+		{{Text: "🔙 返回工作台", CallbackData: CallbackData("private", "console")}},
+	}}}
+}

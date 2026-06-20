@@ -38,6 +38,10 @@ func (a *App) routePrivateCallback(b *gotgbot.Bot, ctx *ext.Context, payload Cal
 		"bans":                   true,
 		"violations":             true,
 		"check_bot_perm":         true,
+		"spam":                   true,
+		"spam_toggle_ai":         true,
+		"spam_toggle_links":      true,
+		"spam_toggle_forwards":   true,
 	}
 	var selectedChat *ChatBinding
 	if needsChat[payload.Action] {
@@ -128,6 +132,14 @@ func (a *App) routePrivateCallback(b *gotgbot.Bot, ctx *ext.Context, payload Cal
 		return a.showPrivateViolationsPanel(b, ctx, *selectedChat)
 	case "check_bot_perm":
 		return a.showPrivateCheckBotPermPanel(b, ctx, *selectedChat)
+	case "spam":
+		return a.showPrivateSpamPanel(b, ctx, *selectedChat)
+	case "spam_toggle_ai":
+		return a.toggleSpamAiFilter(b, ctx, *selectedChat)
+	case "spam_toggle_links":
+		return a.toggleSpamBlockLinks(b, ctx, *selectedChat)
+	case "spam_toggle_forwards":
+		return a.toggleSpamBlockForwards(b, ctx, *selectedChat)
 	default:
 		return answerCallback(b, ctx, "未知操作")
 	}
@@ -302,6 +314,7 @@ func privateConsoleMarkup(_ ChatBinding) *gotgbot.SendMessageOpts {
 			{Text: "📈 运行概览", CallbackData: CallbackData("private", "summary")},
 		},
 		{
+			{Text: "🤖 AI反垃圾", CallbackData: CallbackData("private", "spam")},
 			{Text: "🔄 切换目标", CallbackData: CallbackData("private", "list")},
 		},
 	}}}

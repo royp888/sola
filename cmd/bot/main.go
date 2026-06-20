@@ -19,6 +19,7 @@ import (
 	botapp "github.com/dabowin/sola/internal/bot"
 	"github.com/dabowin/sola/internal/config"
 	"github.com/dabowin/sola/internal/service"
+	"github.com/dabowin/sola/internal/web"
 	"github.com/dabowin/sola/internal/worker"
 	"go.uber.org/zap"
 )
@@ -110,6 +111,36 @@ func run() error {
 			if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				resources.Logger.Error("worker exited with error", zap.Error(err))
 			}
+		}()
+	}
+
+	// Start Mini App HTTP server for Turnstile verification (if configured).
+	if cfg.App.HTTPAddr != "" && cfg.Turnstile.SiteKey != "" {
+		mux := http.NewServeMux()
+		handler := web.NewTurnstileHandler(web.TurnstileConfig{
+			SiteKey:      cfg.Turnstile.SiteKey,
+			SecretKey:    cfg.Turnstile.SecretKey,
+			VerifySecret: cfg.Turnstile.VerifySecret,
+			BotToken:     token,
+		})
+		handler.Register(mux)
+		srv := &http.Server{
+			Addr:         cfg.App.HTTPAddr,
+			Handler:      mux,
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+		}
+		go func() {
+			log.Printf("mini app HTTP server listening on %s", cfg.App.HTTPAddr)
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("mini app HTTP server error: %v", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutCtx)
 		}()
 	}
 
